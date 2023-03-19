@@ -44,7 +44,7 @@ modifier_last_pressed = 0
 audio_queue = queue.Queue()
 
 # Audio settings
-CHUNK = 1024
+CHUNK = 512
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 16000
@@ -146,7 +146,12 @@ def on_release(key):
         print("Stopping recording..")
         stop_recording()
 
-# Start listening for the hotkey
-with keyboard.Listener(on_press=on_press, on_release=on_release) as listener:
-    print("Listening for hotkey...")
-    listener.join()
+if __name__ == "__main__":
+    try:
+        # Start listening for the hotkey
+        with keyboard.Listener(on_press=on_press, on_release=on_release) as listener:
+            print("Listening for hotkey...")
+            listener.join()
+    except KeyboardInterrupt:
+        print("Exiting...")
+        sys.exit(0)
