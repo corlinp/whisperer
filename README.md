@@ -1,14 +1,17 @@
 # Whisperer
 
-Usable voice-to-text for everyday writing. Magnitudes better than built-in dictation on Mac.
+Usable voice-to-text for everyday writing. Streets ahead of built-in dictation.
 
-When whisperer running, you can press or press-and-hold the right option key on your mac and start talking. When you're done, you can press the right option key again to stop recording. The text will be written to whatever window you're in.
+With whisperer running, just press (or press-and-hold) the right option key on your Mac and start talking. 
 
-Whisperer uses OpenAI's Whisper running locally in pytorch and can be prompted to better handle technical jargon.
+When you're done, you can release or press the key again to stop recording. The app will emulate your keyboard and text will be written to whatever textbox you have active.
+
+Whisperer uses OpenAI's Whisper running locally in pytorch and can be prompted to better handle technical jargon. Just supply it a prompt or a `.txt` file.
 
 ## Comparison
 
 Original Sentence:
+
 > Popular Linux distributions include Debian, Fedora Linux, and Ubuntu. You can use windowing systems such as X11 or Wayland with a desktop environment like KDE Plasma.
 
 iPhone Voice-to-Text:
@@ -26,7 +29,12 @@ Here, Whisper was clued in to me talking like a computer scientist and was able 
 Whisperer is currently in alpha and occasionally crashes with segmentation faults. To fix this we're waiting on some patches to Pytorch on M1 Macs. We might also switch to [this](https://github.com/ggerganov/whisper.cpp) C++ implementation of Whisper some day. PRs welcome!
 
 
-## Installation
+## Installation and Usage
 
-Whisperer runs in Python 3.10 (not 3.11, yet). You can install it on Mac with the included install.sh script.
+```
+./install.sh
+echo "Talking about computers and life" > ~/whisperer_prompt.txt
+whisperer ~/whisperer_prompt.txt
+```
 
+Now just try that right-option key in any text field!
