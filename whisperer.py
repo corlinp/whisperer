@@ -122,7 +122,9 @@ def process_audio():
         transcribe_duration = t1 - t0
         orig_duration = len(waveform) / RATE
         print(f"Audio: {orig_duration:.2f}s, Transcription: {transcribe_duration:.2f}s, Speedup: {orig_duration / transcribe_duration:.2f}x")
-        pyautogui.write(transcription + " ")
+        # capitalize first letter and add a space at the end
+        transcription = transcription[0].upper() + transcription[1:] + " "
+        pyautogui.write(transcription)
 
 threading.Thread(target=process_audio).start()
 
