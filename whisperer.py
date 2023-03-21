@@ -1,14 +1,15 @@
-import json
 import queue
 import sys
 import threading
 import time
+from datetime import datetime
 
-import numpy as np
 import pyaudio
 import pyautogui
-import whisper
+import pyperclip
 from pynput import keyboard
+import wave
+import subprocess
 
 # Configure your desired hotkey
 MODIFIER = keyboard.Key.alt_r
@@ -27,13 +28,6 @@ if len(sys.argv) > 1:
 else:
     print("No prompt specified")
 
-# Load the model
-# switch cpu to mps once fixed: https://github.com/pytorch/pytorch/issues/87886
-model = whisper.load_model("small.en", device='cpu')
-
-# Enable VAD - detects when you stop speaking and starts transcribing that automatically
-use_vad = False
-
 # Global variables
 recording = False
 audio = pyaudio.PyAudio()
@@ -49,10 +43,14 @@ FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 16000
 
+recordings_folder = "/Users/corlinpalmer/Documents/whispers"
+
+# if recording is shorter than this, use the base model. Else we use small.
+model_duration_cutoff_secs = 8.0
+
 def record_audio():
     """Record audio from the microphone and store it in frames."""
     global recording, stream, frames
-    silence_counter = 0
     if not recording:
         recording = True
         stream = audio.open(format=FORMAT,
@@ -61,92 +59,99 @@ def record_audio():
                             input=True,
                             frames_per_buffer=CHUNK)
         frames = []
-        print("Recording started...")
+        print(f"Recording started after {time.time() - modifier_last_pressed:.4f}s.")
 
     while recording:
         data = stream.read(CHUNK)
-        frame = np.frombuffer(data, dtype=np.int16).astype(np.float32, order='C') / 32768.0
-        if not use_vad:
-            frames.append(frame)
-            continue
-        # Check if the current frame contains speech
-        # definitely need to improve how we do VAD
-        avg_volume = np.mean(np.abs(frame))
-        is_speech = avg_volume > 0.001
-        print(f"Speech: {avg_volume}")
-        if is_speech:
-            silence_counter = 0
-            frames.append(frame)
-        else:
-            silence_counter += 1
-
-            # Check if silence duration exceeds the threshold
-            if silence_counter > 20:  # Adjust this value to change the silence threshold
-                silence_counter = 0
-                if len(frames) > 0:
-                    process_and_clear_frames()
+        frames.append(data)
     else:
         stop_recording()
 
 def process_and_clear_frames():
     global frames
-    audio_array = np.concatenate(frames)
-    audio_queue.put(audio_array)
+    fname = f"{recordings_folder}/recording_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.wav"
+    with wave.open(fname, "wb") as f:
+        f.setnchannels(CHANNELS)
+        f.setsampwidth(audio.get_sample_size(FORMAT))
+        f.setframerate(RATE)
+        f.writeframes(b"".join(frames))
+    duration = (len(frames)*CHUNK) / RATE
+    audio_queue.put((fname, duration))
     frames = []
 
 def stop_recording():
     global recording, stream
-    if not recording:
-        return
-    recording = False
     stream.stop_stream()
     stream.close()
     if len(frames) > 0:
         process_and_clear_frames()
 
-def process_audio():
+def process_audio_whispercpp():
     """Continuously process audio from the queue and transcribe it."""
     global audio_queue
     while True:
-        waveform = audio_queue.get()
+        fname, orig_duration = audio_queue.get()
         t0 = time.time()
-        print("Transcribing audio...")
-        try:
-            result = model.transcribe(waveform, verbose=False, initial_prompt=prompt, fp16=False)
-        except Exception as e:
-            print(f"Error: {e}")
-            result = model.transcribe(waveform, verbose=False, initial_prompt=prompt, fp16=False)
-        # print(json.dumps(result, indent=2))
-        transcription = result["text"].strip()
+        model = "small.en"
+        if orig_duration < model_duration_cutoff_secs:
+            model = "base.en"
+        print("Transcribing audio with whispercpp...")
+        cmd = ['/Users/corlinpalmer/Documents/GitHub/whisperer/whisper.cpp/main',
+            '-m', f'/Users/corlinpalmer/Documents/GitHub/whisperer/whisper.cpp/models/ggml-{model}.bin',
+            '-f', fname,
+            '--prompt', prompt,
+            '-nt', '-otxt'
+        ]
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        # print stdout and stderr
+        # print(result.stdout)
+        print(result.stderr)
+        result.check_returncode()
+        output_file = fname+".txt"
+        # read the file
+        with open(output_file) as f:
+            transcription = f.read()
+        
         t1 = time.time()
         transcribe_duration = t1 - t0
-        orig_duration = len(waveform) / RATE
         print(f"Audio: {orig_duration:.2f}s, Transcription: {transcribe_duration:.2f}s, Speedup: {orig_duration / transcribe_duration:.2f}x")
-        # capitalize first letter and add a space at the end
-        transcription = transcription[0].upper() + transcription[1:] + " "
-        pyautogui.write(transcription)
+        transcription = transcription.strip().replace("\n", " ").replace("  ", " ")
+        if len(transcription) == 0:
+            transcription = " "
+        else:
+            transcription = transcription[0].upper() + transcription[1:] + " "
+        # pyautogui.write(transcription)
+        # instead of write (which is slow and buggy), use pyperclip
+        print(f"\n{transcription}\n\n")
+        pyperclip.copy(transcription)
+        while modifier_pressed:
+            time.sleep(0.02)
+        pyautogui.hotkey("command", "v")
 
-threading.Thread(target=process_audio).start()
+
+threading.Thread(target=process_audio_whispercpp).start()
 
 # Hotkey listener
 def on_press(key):
     global modifier_last_pressed, recording
     if key == MODIFIER:
+        modifier_pressed = True
         modifier_last_pressed = time.time()
         if recording:
             print("Stopping recording..")
-            stop_recording()
+            recording = False
         else:
             print("Starting recording..")
             threading.Thread(target=record_audio).start()
 
 def on_release(key):
-    global modifier_last_pressed
+    global modifier_last_pressed, recording
     if key == MODIFIER:
+        modifier_pressed = False
         if time.time() - modifier_last_pressed < 0.5:
             return
         print("Stopping recording..")
-        stop_recording()
+        recording = False
 
 if __name__ == "__main__":
     try:
