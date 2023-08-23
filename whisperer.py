@@ -3,6 +3,7 @@ import sys
 import threading
 import time
 from datetime import datetime
+import re
 
 import pyaudio
 import pyautogui
@@ -10,6 +11,8 @@ import pyperclip
 from pynput import keyboard
 import wave
 import subprocess
+import numpy as np
+
 
 # Configure your desired hotkey
 MODIFIER = keyboard.Key.alt_r
@@ -37,15 +40,21 @@ modifier_pressed = False
 modifier_last_pressed = 0
 audio_queue = queue.Queue()
 
+recordings_folder = "/Users/corlinpalmer/Documents/whispers"
+whispercpp_folder = "/Users/corlinpalmer/Documents/GitHub/whisperer/whisper.cpp"
+
 # Audio settings
 CHUNK = 512
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 16000
 
-recordings_folder = "/Users/corlinpalmer/Documents/whispers"
-
-# if recording is shorter than this, use the base model. Else we use small.
+# models to use based on duration
+models = {
+    # "tiny.en": (0, 3), # 0 to 3 seconds long
+    "base.en": (0, 8),
+    "small.en": (8, 99999999),
+}
 model_duration_cutoff_secs = 8.0
 
 def record_audio():
@@ -69,13 +78,27 @@ def record_audio():
 
 def process_and_clear_frames():
     global frames
+    duration = (len(frames) * CHUNK) / RATE
+
+    # Check if recording duration is shorter than 3 seconds
+    if duration < 5:
+        # Calculate the number of frames to add to each side to pad the recording
+        pad_frames = int((5 - duration) * RATE / CHUNK / 2)
+        # Create silence frames
+        silence_data = np.zeros((CHUNK * pad_frames,), dtype=np.int16).tobytes()
+        # Add silence frames to the beginning and end of the recording
+        frames.insert(0, silence_data)
+        frames.append(silence_data)
+
     fname = f"{recordings_folder}/recording_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.wav"
     with wave.open(fname, "wb") as f:
         f.setnchannels(CHANNELS)
         f.setsampwidth(audio.get_sample_size(FORMAT))
         f.setframerate(RATE)
         f.writeframes(b"".join(frames))
-    duration = (len(frames)*CHUNK) / RATE
+    
+    # Update duration after padding
+    duration = (len(frames) * CHUNK) / RATE
     audio_queue.put((fname, duration))
     frames = []
 
@@ -86,25 +109,37 @@ def stop_recording():
     if len(frames) > 0:
         process_and_clear_frames()
 
+def process_transcription(s: str):
+    # remove any part between [brackets] - this is typically something like [silence] or [buzzing]
+    s = re.sub(r"\[.*?\]", "", s)
+    s = s.strip().replace("\n", " ").replace("  ", " ")
+    if len(s) == 0:
+        s = " "
+    else:
+        s = s[0].upper() + s[1:] + " "
+    return s
+
 def process_audio_whispercpp():
     """Continuously process audio from the queue and transcribe it."""
     global audio_queue
     while True:
         fname, orig_duration = audio_queue.get()
         t0 = time.time()
-        model = "small.en"
-        if orig_duration < model_duration_cutoff_secs:
-            model = "base.en"
-        print("Transcribing audio with whispercpp...")
-        cmd = ['/Users/corlinpalmer/Documents/GitHub/whisperer/whisper.cpp/main',
-            '-m', f'/Users/corlinpalmer/Documents/GitHub/whisperer/whisper.cpp/models/ggml-{model}.bin',
+        model = None
+        for m, duration_cutoff in models.items():
+            if duration_cutoff[0] <= orig_duration <= duration_cutoff[1]:
+                model = m
+                break
+        print(f"Transcribing audio with whispercpp model {model}...")
+        cmd = [f'{whispercpp_folder}/main',
+            '-m', f'{whispercpp_folder}/models/ggml-{model}.bin',
             '-f', fname,
             '--prompt', prompt,
             '-nt', '-otxt'
         ]
         result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         # print stdout and stderr
-        # print(result.stdout)
+        print(result.stdout)
         print(result.stderr)
         result.check_returncode()
         output_file = fname+".txt"
@@ -115,17 +150,14 @@ def process_audio_whispercpp():
         t1 = time.time()
         transcribe_duration = t1 - t0
         print(f"Audio: {orig_duration:.2f}s, Transcription: {transcribe_duration:.2f}s, Speedup: {orig_duration / transcribe_duration:.2f}x")
-        transcription = transcription.strip().replace("\n", " ").replace("  ", " ")
-        if len(transcription) == 0:
-            transcription = " "
-        else:
-            transcription = transcription[0].upper() + transcription[1:] + " "
+        transcription = process_transcription(transcription)
         # pyautogui.write(transcription)
         # instead of write (which is slow and buggy), use pyperclip
         print(f"\n{transcription}\n\n")
         pyperclip.copy(transcription)
         while modifier_pressed:
             time.sleep(0.02)
+        time.sleep(0.01)
         pyautogui.hotkey("command", "v")
 
 
@@ -148,7 +180,7 @@ def on_release(key):
     global modifier_last_pressed, recording
     if key == MODIFIER:
         modifier_pressed = False
-        if time.time() - modifier_last_pressed < 0.5:
+        if time.time() - modifier_last_pressed < 0.25:
             return
         print("Stopping recording..")
         recording = False
