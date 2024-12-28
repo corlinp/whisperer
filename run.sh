@@ -1,7 +1,7 @@
 #!/bin/bash
 
 while true; do
-    python3.10 whisperer.py $@
+    python3 whisperer.py $@
     exit_code=$?
     if [ $exit_code -eq 0 ]; then
         break

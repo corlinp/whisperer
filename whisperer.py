@@ -40,7 +40,7 @@ modifier_pressed = False
 modifier_last_pressed = 0
 audio_queue = queue.Queue()
 
-recordings_folder = "/Users/corlinpalmer/Documents/whispers"
+recordings_folder = "/Users/corlinpalmer/whispers"
 whispercpp_folder = "/Users/corlinpalmer/Documents/GitHub/whisperer/whisper.cpp"
 
 # Audio settings
@@ -57,24 +57,38 @@ models = {
 }
 model_duration_cutoff_secs = 8.0
 
-def record_audio():
+
+def record_audio(tries=0):
     """Record audio from the microphone and store it in frames."""
+    if tries > 3:
+        print("Failed to record audio after 3 tries.")
+        return
+
     global recording, stream, frames
     if not recording:
-        recording = True
-        stream = audio.open(format=FORMAT,
-                            channels=CHANNELS,
-                            rate=RATE,
-                            input=True,
-                            frames_per_buffer=CHUNK)
-        frames = []
-        print(f"Recording started after {time.time() - modifier_last_pressed:.4f}s.")
+        try:
+            stream = audio.open(
+                format=FORMAT,
+                channels=CHANNELS,
+                rate=RATE,
+                input=True,
+                frames_per_buffer=CHUNK,
+            )
+            recording = True
+            frames = []
+            print(
+                f"Recording started after {time.time() - modifier_last_pressed:.4f}s."
+            )
+        except Exception as e:
+            print(f"Failed to record audio: {e}")
+            return record_audio(tries + 1)
 
     while recording:
         data = stream.read(CHUNK)
         frames.append(data)
     else:
         stop_recording()
+
 
 def process_and_clear_frames():
     global frames
@@ -96,11 +110,12 @@ def process_and_clear_frames():
         f.setsampwidth(audio.get_sample_size(FORMAT))
         f.setframerate(RATE)
         f.writeframes(b"".join(frames))
-    
+
     # Update duration after padding
     duration = (len(frames) * CHUNK) / RATE
     audio_queue.put((fname, duration))
     frames = []
+
 
 def stop_recording():
     global recording, stream
@@ -108,6 +123,7 @@ def stop_recording():
     stream.close()
     if len(frames) > 0:
         process_and_clear_frames()
+
 
 def process_transcription(s: str):
     # remove any part between [brackets] - this is typically something like [silence] or [buzzing]
@@ -118,6 +134,7 @@ def process_transcription(s: str):
     else:
         s = s[0].upper() + s[1:] + " "
     return s
+
 
 def process_audio_whispercpp():
     """Continuously process audio from the queue and transcribe it."""
@@ -131,25 +148,34 @@ def process_audio_whispercpp():
                 model = m
                 break
         print(f"Transcribing audio with whispercpp model {model}...")
-        cmd = [f'{whispercpp_folder}/main',
-            '-m', f'{whispercpp_folder}/models/ggml-{model}.bin',
-            '-f', fname,
-            '--prompt', prompt,
-            '-nt', '-otxt'
+        cmd = [
+            f"{whispercpp_folder}/main",
+            "-m",
+            f"{whispercpp_folder}/models/ggml-{model}.bin",
+            "-f",
+            fname,
+            "--prompt",
+            prompt,
+            "-nt",
+            "-otxt",
         ]
-        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        result = subprocess.run(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        )
         # print stdout and stderr
         print(result.stdout)
         print(result.stderr)
         result.check_returncode()
-        output_file = fname+".txt"
+        output_file = fname + ".txt"
         # read the file
         with open(output_file) as f:
             transcription = f.read()
-        
+
         t1 = time.time()
         transcribe_duration = t1 - t0
-        print(f"Audio: {orig_duration:.2f}s, Transcription: {transcribe_duration:.2f}s, Speedup: {orig_duration / transcribe_duration:.2f}x")
+        print(
+            f"Audio: {orig_duration:.2f}s, Transcription: {transcribe_duration:.2f}s, Speedup: {orig_duration / transcribe_duration:.2f}x"
+        )
         transcription = process_transcription(transcription)
         # pyautogui.write(transcription)
         # instead of write (which is slow and buggy), use pyperclip
@@ -158,10 +184,14 @@ def process_audio_whispercpp():
         while modifier_pressed:
             time.sleep(0.02)
         time.sleep(0.01)
-        pyautogui.hotkey("command", "v")
+        # Paste the clipboard content using pyautogui
+        pyautogui.keyDown("command")
+        pyautogui.press("v")
+        pyautogui.keyUp("command")
 
 
 threading.Thread(target=process_audio_whispercpp).start()
+
 
 # Hotkey listener
 def on_press(key):
@@ -176,6 +206,7 @@ def on_press(key):
             print("Starting recording..")
             threading.Thread(target=record_audio).start()
 
+
 def on_release(key):
     global modifier_last_pressed, recording
     if key == MODIFIER:
@@ -184,6 +215,7 @@ def on_release(key):
             return
         print("Stopping recording..")
         recording = False
+
 
 if __name__ == "__main__":
     try:
