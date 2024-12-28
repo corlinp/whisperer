@@ -1,0 +1,15 @@
+Transcribe what I'm about to say to text.
+
+If it helps for context, I often talk about topics involving computer science, crypto, finance, and AI.
+
+I might also refer to company names, acronyms, and codenames that you may be unfamiliar with such as: ParaFi Capital, PT, PTS, PQS, PDO, Callisto, Trask, etc.
+
+Note that this is going to be sent as a Slack message so you may format it nicely using line breaks and Slack markdown formatting (sparingly) to improve readability. A refresher:
+- *bold*
+- _italic_
+- `code`
+- ```code block```
+- [link](https://example.com)
+- * list
+- 1. numbered list
+

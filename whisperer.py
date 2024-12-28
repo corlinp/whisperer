@@ -1,4 +1,8 @@
+import argparse
+import base64
 import json
+import os
+import requests
 import queue
 import sys
 import threading
@@ -7,29 +11,28 @@ import time
 import numpy as np
 import pyaudio
 import pyautogui
-import whisper
 from pynput import keyboard
 
 # Configure your desired hotkey
 MODIFIER = keyboard.Key.alt_r
 
+# Add command line argument parsing
+parser = argparse.ArgumentParser()
+parser.add_argument("--prompt", type=str, help="Initial prompt for transcription")
+args = parser.parse_args()
+
+# Update prompt handling
 prompt = ""
-if len(sys.argv) > 1:
-    prompt = sys.argv[1]
-    # if prompt ends in .txt, read the file
-    if prompt.endswith(".txt"):
-        with open(prompt) as f:
+if args.prompt:
+    if args.prompt.endswith(".txt"):
+        with open(args.prompt) as f:
             prompt = f.read()
-    prompt_preview = prompt
-    if len(prompt_preview) > 20:
-        prompt_preview = prompt_preview[:20] + "..."
+    else:
+        prompt = args.prompt
+    prompt_preview = prompt[:20] + "..." if len(prompt) > 20 else prompt
     print(f"Using prompt: {prompt_preview}")
 else:
     print("No prompt specified")
-
-# Load the model
-# switch cpu to mps once fixed: https://github.com/pytorch/pytorch/issues/87886
-model = whisper.load_model("small.en", device='cpu')
 
 # Enable VAD - detects when you stop speaking and starts transcribing that automatically
 use_vad = False
@@ -104,6 +107,66 @@ def stop_recording():
     if len(frames) > 0:
         process_and_clear_frames()
 
+def save_audio_to_wav(frames):
+    """Save audio frames to a temporary WAV file."""
+    import wave
+    temp_wav = "temp_recording.wav"
+    with wave.open(temp_wav, 'wb') as wf:
+        wf.setnchannels(CHANNELS)
+        wf.setsampwidth(audio.get_sample_size(FORMAT))
+        wf.setframerate(RATE)
+        for frame in frames:
+            wf.writeframes((frame * 32768).astype(np.int16).tobytes())
+    return temp_wav
+
+def transcribe_with_api(audio_file):
+    """Transcribe audio using OpenAI's API."""
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY not set in environment")
+
+    with open(audio_file, "rb") as f:
+        audio_data = f.read()
+    
+    encoded_audio = base64.b64encode(audio_data).decode('utf-8')
+    
+    payload = {
+        "model": "gpt-4o-audio-preview-2024-12-17",
+        "modalities": ["text"],
+        # "audio": {"voice": "alloy", "format": "wav"},
+        "messages": [{
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": prompt,
+                },
+                {
+                    "type": "input_audio",
+                    "input_audio": {
+                        "data": encoded_audio,
+                        "format": "wav"
+                    }
+                }
+            ]
+        }]
+    }
+
+    response = requests.post(
+        "https://api.openai.com/v1/chat/completions",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        },
+        json=payload
+    )
+    
+    if response.status_code != 200:
+        raise Exception(f"API request failed: {response.text}")
+    
+    result = response.json()
+    return result["choices"][0]["message"]["content"]
+
 def process_audio():
     """Continuously process audio from the queue and transcribe it."""
     global audio_queue
@@ -111,18 +174,21 @@ def process_audio():
         waveform = audio_queue.get()
         t0 = time.time()
         print("Transcribing audio...")
+        
         try:
-            result = model.transcribe(waveform, verbose=False, initial_prompt=prompt, fp16=False)
+            # Save audio to WAV file for API
+            wav_file = save_audio_to_wav(frames)
+            transcription = transcribe_with_api(wav_file)
+            os.remove(wav_file)  # Clean up temporary file
         except Exception as e:
             print(f"Error: {e}")
-            result = model.transcribe(waveform, verbose=False, initial_prompt=prompt, fp16=False)
-        # print(json.dumps(result, indent=2))
-        transcription = result["text"].strip()
+            continue
+
         t1 = time.time()
         transcribe_duration = t1 - t0
         orig_duration = len(waveform) / RATE
         print(f"Audio: {orig_duration:.2f}s, Transcription: {transcribe_duration:.2f}s, Speedup: {orig_duration / transcribe_duration:.2f}x")
-        # capitalize first letter and add a space at the end
+        
         transcription = transcription[0].upper() + transcription[1:] + " "
         pyautogui.write(transcription)
 
