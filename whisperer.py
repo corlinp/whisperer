@@ -58,6 +58,8 @@ FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 16000
 
+MAX_RECORDING_LENGTH = 120
+
 COSTS = {
     'standard': {
         'text_input': 2.50 / 1_000_000,  # $2.50 per 1M tokens
@@ -221,6 +223,15 @@ def record_audio(tries=0):
 def process_and_clear_frames():
     global frames
     duration = (len(frames) * CHUNK) / RATE
+
+    # Add confirmation prompt for long recordings
+    if duration > MAX_RECORDING_LENGTH:
+        print(f"\nWarning: Recording is {duration:.1f} seconds long.")
+        response = input("Do you want to process this recording? (y/n): ").lower()
+        if response != 'y':
+            print("Discarding recording...")
+            frames = []
+            return
 
     # Check if recording duration is shorter than 3 seconds
     if duration < 5:
