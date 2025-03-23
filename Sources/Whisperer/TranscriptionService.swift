@@ -1,7 +1,25 @@
 import Foundation
 import AVFoundation
 
+@available(*, deprecated, message: "Consider using 'Task' to safely run asynchronous code")
+fileprivate func asyncTask(_ block: @escaping () -> Void) {
+    DispatchQueue.global(qos: .userInitiated).async {
+        block()
+    }
+}
+
 class TranscriptionService {
+    // Log levels
+    enum LogLevel: Int {
+        case none = 0
+        case error = 1
+        case info = 2
+        case debug = 3
+    }
+    
+    // Set the desired log level
+    private let logLevel: LogLevel = .error
+    
     // WebSocket connection for streaming audio and receiving transcriptions
     private var webSocketTask: URLSessionWebSocketTask?
     private var isConnected = false
@@ -29,15 +47,15 @@ class TranscriptionService {
     
     func connect() {
         guard apiKey.isEmpty == false else {
-            print("Error: OpenAI API key is not set")
+            log(.error, message: "Error: OpenAI API key is not set")
             return
         }
         
         if !apiKey.hasPrefix("sk-") {
-            print("Warning: API key does not start with 'sk-'. This may not be a valid OpenAI API key.")
+            log(.info, message: "Warning: API key does not start with 'sk-'. This may not be a valid OpenAI API key.")
         }
         
-        print("Connecting to OpenAI Realtime API with API key: \(apiKey.prefix(5))...")
+        log(.info, message: "Connecting to OpenAI Realtime API")
         
         // Create a transcription session first
         createTranscriptionSession()
@@ -45,7 +63,7 @@ class TranscriptionService {
     
     private func createTranscriptionSession() {
         guard let url = URL(string: "https://api.openai.com/v1/realtime/transcription_sessions") else {
-            print("Error: Invalid URL for OpenAI API")
+            log(.error, message: "Error: Invalid URL for OpenAI API")
             return
         }
         
@@ -75,7 +93,7 @@ class TranscriptionService {
         do {
             request.httpBody = try JSONSerialization.data(withJSONObject: sessionConfig)
         } catch {
-            print("Error serializing session config: \(error.localizedDescription)")
+            log(.error, message: "Error serializing session config: \(error.localizedDescription)")
             return
         }
         
@@ -84,58 +102,55 @@ class TranscriptionService {
             guard let self = self else { return }
             
             if let error = error {
-                print("Error creating transcription session: \(error.localizedDescription)")
+                self.log(.error, message: "Error creating transcription session: \(error.localizedDescription)")
                 return
             }
             
             guard let httpResponse = response as? HTTPURLResponse else {
-                print("Error: No HTTP response")
+                self.log(.error, message: "Error: No HTTP response")
                 return
             }
             
             if httpResponse.statusCode != 200 {
-                print("Error: HTTP status code \(httpResponse.statusCode)")
+                self.log(.error, message: "Error: HTTP status code \(httpResponse.statusCode)")
                 if let data = data, let errorString = String(data: data, encoding: .utf8) {
-                    print("Error response: \(errorString)")
-                    if let errorResponse = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                        print("Error response: \(errorResponse)")
-                    }
+                    self.log(.error, message: "Error response: \(errorString)")
                 }
                 return
             }
             
             guard let data = data else {
-                print("Error: No data received")
+                self.log(.error, message: "Error: No data received")
                 return
             }
             
             do {
                 guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                    print("Error parsing session response: Not a dictionary")
+                    self.log(.error, message: "Error parsing session response: Not a dictionary")
                     return
                 }
                 
                 if let id = json["id"] as? String {
-                    print("Transcription session created with ID: \(id)")
+                    self.log(.info, message: "Transcription session created with ID: \(id)")
                     self.sessionId = id
                     
                     // Extract client secret for WebSocket authentication
                     if let clientSecret = json["client_secret"] as? [String: Any],
                        let clientSecretValue = clientSecret["value"] as? String {
-                        print("Client secret obtained: \(clientSecretValue.prefix(5))...")
+                        self.log(.debug, message: "Client secret obtained")
                         self.clientSecret = clientSecretValue
                         self.connectWebSocket()
                     } else {
-                        print("Error: No client_secret in response")
+                        self.log(.error, message: "Error: No client_secret in response")
                     }
                 } else {
-                    print("Error: No session ID in response")
+                    self.log(.error, message: "Error: No session ID in response")
                     if let errorObj = json["error"] as? [String: Any], let message = errorObj["message"] as? String {
-                        print("API error: \(message)")
+                        self.log(.error, message: "API error: \(message)")
                     }
                 }
             } catch {
-                print("Error parsing session response: \(error.localizedDescription)")
+                self.log(.error, message: "Error parsing session response: \(error.localizedDescription)")
             }
         }
         
@@ -143,13 +158,13 @@ class TranscriptionService {
     }
     
     private func connectWebSocket() {
-        guard let sessionId = sessionId, let clientSecret = clientSecret else {
-            print("Error: Session ID or client secret not available")
+        guard let _ = sessionId, let clientSecret = clientSecret else {
+            log(.error, message: "Error: Session ID or client secret not available")
             return
         }
         
         guard let url = URL(string: "wss://api.openai.com/v1/realtime?intent=transcription") else {
-            print("Error: Invalid URL for OpenAI WebSocket")
+            log(.error, message: "Error: Invalid URL for OpenAI WebSocket")
             return
         }
         
@@ -158,7 +173,7 @@ class TranscriptionService {
         request.setValue("realtime=v1", forHTTPHeaderField: "OpenAI-Beta")
         request.timeoutInterval = 30
         
-        print("Creating WebSocket connection...")
+        log(.info, message: "Creating WebSocket connection")
         let session = URLSession(configuration: .default)
         webSocketTask = session.webSocketTask(with: request)
         
@@ -168,7 +183,7 @@ class TranscriptionService {
         // Start receiving messages
         receiveMessages()
         
-        print("Starting WebSocket connection...")
+        log(.info, message: "Starting WebSocket connection")
         webSocketTask?.resume()
         
         // Set connection to true after initiating the connection
@@ -205,12 +220,11 @@ class TranscriptionService {
         }
         """
         
-        // print("Sending transcription session update")
         send(text: updateMessage)
     }
     
     func disconnect() {
-        print("Disconnecting WebSocket...")
+        log(.info, message: "Disconnecting WebSocket")
         isConnected = false  // Set this first to prevent further processing
         
         // Cancel any pending receive operations
@@ -218,20 +232,27 @@ class TranscriptionService {
         webSocketTask = nil
         sessionId = nil
         clientSecret = nil
-        print("WebSocket disconnected")
     }
     
     private func setupPingTask() {
-        print("Setting up ping task to maintain connection...")
+        log(.debug, message: "Setting up ping task to maintain connection")
+        // Store a weak reference to self and the error handler function
+        let weakSelf = self
+        let errorHandler: (Error) -> Void = { error in
+            let message = "Ping error: \(error.localizedDescription)"
+            asyncTask {
+                // This avoids the @Sendable warning since we're not capturing self directly
+                weakSelf.log(.error, message: message)
+            }
+        }
+        
         // Use _ to discard the task but keep it running
         _ = Task {
             while isConnected && webSocketTask != nil {
-                print("Sending WebSocket ping...")
+                log(.debug, message: "Sending WebSocket ping")
                 webSocketTask?.sendPing { error in
                     if let error = error {
-                        print("Ping error: \(error.localizedDescription)")
-                    } else {
-                        // print("Ping successful")
+                        errorHandler(error)
                     }
                 }
                 try? await Task.sleep(nanoseconds: 10_000_000_000) // 10 seconds
@@ -240,7 +261,6 @@ class TranscriptionService {
     }
     
     private func receiveMessages() {
-        // print("Starting to receive WebSocket messages...")
         webSocketTask?.receive { [weak self] result in
             guard let self = self else { return }
             
@@ -248,17 +268,15 @@ class TranscriptionService {
             case .success(let message):
                 switch message {
                 case .string(let text):
-                    // print("Received text message")
                     self.handleReceivedMessage(text)
                 case .data(let data):
                     if let text = String(data: data, encoding: .utf8) {
-                        // print("Received data message")
                         self.handleReceivedMessage(text)
                     } else {
-                        // print("Received binary data of size: \(data.count)")
+                        self.log(.debug, message: "Received binary data")
                     }
                 @unknown default:
-                    print("Received unknown message type")
+                    self.log(.info, message: "Received unknown message type")
                     break
                 }
                 
@@ -266,9 +284,7 @@ class TranscriptionService {
                 self.receiveMessages()
                 
             case .failure(let error):
-                print("WebSocket receive error: \(error.localizedDescription)")
-                print("Error code: \(error._code), domain: \(error._domain)")
-                print("Connection state: \(self.isConnected ? "Connected" : "Disconnected")")
+                self.log(.error, message: "WebSocket receive error: \(error.localizedDescription)")
                 self.isConnected = false
             }
         }
@@ -276,37 +292,32 @@ class TranscriptionService {
     
     private func handleReceivedMessage(_ message: String) {
         guard let data = message.data(using: .utf8) else {
-            print("Failed to convert message to data")
+            log(.error, message: "Failed to convert message to data")
             return
         }
         
         do {
             guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                print("Failed to parse JSON: Not a dictionary")
+                log(.error, message: "Failed to parse JSON: Not a dictionary")
                 return
             }
             
             if let type = json["type"] as? String {
-                // print("Message type: \(type)")
-                
                 switch type {
                 case "transcription_session.created":
                     if let session = json["session"] as? [String: Any], 
                        let id = session["id"] as? String {
-                        print("Transcription session created with ID: \(id)")
+                        log(.info, message: "Transcription session created with ID: \(id)")
                         sessionId = id
                     }
                 
                 case "input_audio_buffer.speech_started":
-                    print("Speech detected - beginning transcription...")
-                    if let itemId = json["item_id"] as? String {
-                        print("Speech started with item ID: \(itemId)")
-                    }
+                    log(.info, message: "Speech detected - beginning transcription")
                 
                 case "conversation.item.input_audio_transcription.completed":
                     // Handle complete transcription in the format from the API docs
                     if let transcript = json["transcript"] as? String {
-                        print("Complete transcription received: \"\(transcript)\"")
+                        log(.info, message: "Transcription completed: \"\(transcript)\"")
                         DispatchQueue.main.async {
                             self.onTranscriptionReceived?(transcript)
                         }
@@ -315,7 +326,7 @@ class TranscriptionService {
                 case "conversation.item.input_audio_transcription.delta":
                     // Handle incremental text updates in the format from the API docs
                     if let delta = json["delta"] as? String {
-                        print("Transcription delta received: \"\(delta)\"")
+                        log(.debug, message: "Transcription delta: \"\(delta)\"")
                         DispatchQueue.main.async {
                             self.onTranscriptionReceived?(delta)
                         }
@@ -324,62 +335,47 @@ class TranscriptionService {
                 case "error":
                     if let error = json["error"] as? [String: Any],
                        let message = error["message"] as? String {
-                        print("API error: \(message)")
+                        log(.error, message: "API error: \(message)")
                         if let code = error["code"] as? String {
-                            print("Error code: \(code)")
+                            log(.error, message: "Error code: \(code)")
                         }
                     } else {
-                        print("Unknown error format in message")
+                        log(.error, message: "Unknown error format in message")
                     }
                     
                 case "input_audio_buffer.speech_stopped":
-                    print("Speech ended")
-                    // Handle speech end events if needed
-                    
-                case "input_audio_buffer.committed":
-                    if let itemId = json["item_id"] as? String {
-                        // print("Audio buffer committed for item: \(itemId)")
-                    }
-                    
-                case "conversation.item.created":
-                    if let item = json["item"] as? [String: Any], 
-                       let itemId = item["id"] as? String {
-                        // print("Conversation item created with ID: \(itemId)")
-                    }
-                    
+                    log(.info, message: "Speech ended")
+                
                 default:
-                    print("Unhandled message type: \(type)")
-                    print("Message content: \(json)")
+                    log(.debug, message: "Unhandled message type: \(type)")
                 }
             }
         } catch {
-            print("JSON parsing error: \(error.localizedDescription)")
+            log(.error, message: "JSON parsing error: \(error.localizedDescription)")
         }
     }
     
     func send(text: String) {
         guard isConnected else {
-            print("Cannot send message: WebSocket not connected")
+            log(.error, message: "Cannot send message: WebSocket not connected")
             return
         }
         
-        webSocketTask?.send(.string(text)) { error in
+        webSocketTask?.send(.string(text)) { [weak self] error in
             if let error = error {
-                print("Error sending WebSocket message: \(error.localizedDescription)")
-            } else {
-                // print("Message sent successfully")
+                self?.log(.error, message: "Error sending WebSocket message: \(error.localizedDescription)")
             }
         }
     }
     
     func sendAudioBuffer(_ buffer: AVAudioPCMBuffer) {
         guard isConnected else {
-            print("Cannot send audio: WebSocket not connected")
+            log(.debug, message: "Cannot send audio: WebSocket not connected")
             return
         }
         
         guard let audioData = pcmBufferToData(buffer) else {
-            print("Failed to convert audio buffer to data")
+            log(.error, message: "Failed to convert audio buffer to data")
             return
         }
         
@@ -394,14 +390,12 @@ class TranscriptionService {
         }
         """
         
-        // Log only a summary to avoid flooding the console
-        // print("Sending audio buffer: \(audioData.count) bytes")
         send(text: message)
     }
     
     private func pcmBufferToData(_ buffer: AVAudioPCMBuffer) -> Data? {
         guard let channelData = buffer.int16ChannelData else {
-            print("No int16ChannelData in buffer")
+            log(.error, message: "No int16ChannelData in buffer")
             return nil
         }
         
@@ -411,6 +405,20 @@ class TranscriptionService {
         let audioBuffer = channelData[0]
         
         return Data(bytes: audioBuffer, count: frameLength * 2) // 2 bytes per sample for Int16
+    }
+    
+    // Logging utility
+    func log(_ level: LogLevel, message: String) {
+        if level.rawValue <= logLevel.rawValue {
+            let prefix: String
+            switch level {
+            case .none: prefix = ""
+            case .error: prefix = "❌ ERROR: "
+            case .info: prefix = "ℹ️ INFO: "
+            case .debug: prefix = "🔍 DEBUG: "
+            }
+            print("\(prefix)\(message)")
+        }
     }
 } 
 

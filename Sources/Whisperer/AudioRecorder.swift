@@ -6,6 +6,7 @@ class AudioRecorder: NSObject {
     private var inputNode: AVAudioInputNode!
     private var audioBuffers: [AVAudioPCMBuffer] = []
     private var isRecording = false
+    private let logEnabled = false
     
     // Buffer size for audio capture (samples)
     private let bufferSize: AVAudioFrameCount = 1024
@@ -47,13 +48,13 @@ class AudioRecorder: NSObject {
         
         guard let targetFormat = targetFormat,
               let converter = AVAudioConverter(from: buffer.format, to: targetFormat) else {
-            print("Failed to create audio converter")
+            log("Failed to create audio converter")
             return nil
         }
         
         let frameCount = AVAudioFrameCount(Double(buffer.frameLength) * 16000 / buffer.format.sampleRate)
         guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: frameCount) else {
-            print("Failed to create output buffer")
+            log("Failed to create output buffer")
             return nil
         }
         
@@ -64,12 +65,12 @@ class AudioRecorder: NSObject {
         }
         
         if let error = error {
-            print("Error converting audio: \(error.localizedDescription)")
+            log("Error converting audio: \(error.localizedDescription)")
             return nil
         }
         
         if status == .error {
-            print("Error during audio conversion")
+            log("Error during audio conversion")
             return nil
         }
         
@@ -86,9 +87,9 @@ class AudioRecorder: NSObject {
             // Start audio engine
             try audioEngine.start()
             isRecording = true
-            print("Audio recording started")
+            log("Audio recording started")
         } catch {
-            print("Failed to start audio recording: \(error.localizedDescription)")
+            log("Failed to start audio recording: \(error.localizedDescription)")
         }
     }
     
@@ -99,7 +100,7 @@ class AudioRecorder: NSObject {
         inputNode.removeTap(onBus: 0)
         
         isRecording = false
-        print("Audio recording stopped")
+        log("Audio recording stopped")
         
         // Reinstall tap for next recording
         setupAudioEngine()
@@ -121,5 +122,11 @@ class AudioRecorder: NSObject {
         }
         
         return combinedData
+    }
+    
+    private func log(_ message: String) {
+        if logEnabled {
+            print("[AudioRecorder] \(message)")
+        }
     }
 } 

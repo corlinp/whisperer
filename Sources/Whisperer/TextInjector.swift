@@ -5,6 +5,8 @@ import Carbon
 class TextInjector {
     // Previous text to avoid reinserting the same content
     private var previousText = ""
+    // For logging
+    private let logEnabled = false
     
     func injectText(_ text: String) {
         // Handle delta updates vs. full text
@@ -28,11 +30,11 @@ class TextInjector {
         
         // Do nothing if there's no new text
         guard !newText.isEmpty else { 
-            print("No new text to inject")
+            log("No new text to inject")
             return 
         }
         
-        print("Injecting text: \"\(newText)\"")
+        log("Injecting text: \"\(newText)\"")
         
         // Inject the text using CGEvent.keyboardSetUnicodeString
         injectUnicodeString(newText)
@@ -40,7 +42,7 @@ class TextInjector {
     
     private func injectUnicodeString(_ text: String) {
         guard let source = CGEventSource(stateID: .combinedSessionState) else {
-            print("Failed to create event source")
+            log("Failed to create event source")
             return
         }
         
@@ -81,6 +83,12 @@ class TextInjector {
     
     func reset() {
         previousText = ""
+    }
+    
+    private func log(_ message: String) {
+        if logEnabled {
+            print("[TextInjector] \(message)")
+        }
     }
 } 
 

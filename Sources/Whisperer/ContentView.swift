@@ -2,59 +2,60 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var statusController: StatusBarController
-    @State private var showingSettings = false
+    @AppStorage("openAIApiKey") private var apiKey: String = ""
+    @AppStorage("customPrompt") private var customPrompt: String = ""
+    @State private var apiKeyMessage: String = ""
+    @State private var apiKeyMessageColor: Color = .secondary
+    @State private var isTesting = false
+    @State private var showSettings = false
     
     var body: some View {
         VStack(spacing: 12) {
+            // Header
             HStack {
                 Text("Whisperer")
                     .font(.headline)
+                    .foregroundColor(.primary)
                 
                 Spacer()
                 
                 Button(action: {
-                    showingSettings.toggle()
+                    showSettings.toggle()
                 }) {
-                    Image(systemName: "gear")
+                    Image(systemName: showSettings ? "chevron.down" : "gear")
+                        .imageScale(.medium)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.borderless)
+                .contentShape(Rectangle())
+                .help(showSettings ? "Hide settings" : "Show settings")
             }
             
             Divider()
             
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Circle()
-                        .fill(statusController.isRecording ? Color.red : Color.green)
-                        .frame(width: 10, height: 10)
-                    
-                    Text(statusController.isRecording ? "Recording..." : "Ready")
-                        .font(.subheadline)
-                }
-                
-                Text("Hold **Right Option** to record")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            // Status section
+            StatusSection(isRecording: statusController.isRecording)
             
+            // Last transcription (if any)
             if !statusController.lastTranscribedText.isEmpty {
                 Divider()
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Last Transcription:")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    
-                    Text(statusController.lastTranscribedText)
-                        .font(.body)
-                        .lineLimit(3)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
+                LastTranscriptionSection(text: statusController.lastTranscribedText)
+            }
+            
+            // Settings section (collapsible)
+            if showSettings {
+                Divider()
+                SettingsSection(
+                    apiKey: $apiKey,
+                    customPrompt: $customPrompt,
+                    apiKeyMessage: $apiKeyMessage,
+                    apiKeyMessageColor: $apiKeyMessageColor,
+                    isTesting: $isTesting
+                )
             }
             
             Spacer()
             
+            // Quit button
             Button("Quit") {
                 NSApplication.shared.terminate(nil)
             }
@@ -62,38 +63,88 @@ struct ContentView: View {
             .controlSize(.small)
         }
         .padding()
-        .frame(width: 280)
-        .sheet(isPresented: $showingSettings) {
-            SettingsView(isPresented: $showingSettings)
-                .frame(width: 300, height: 350)
+        .frame(width: 320)
+        .onAppear {
+            validateApiKey(apiKey)
+        }
+    }
+    
+    private func validateApiKey(_ key: String) {
+        if key.isEmpty {
+            apiKeyMessage = "Enter your OpenAI API key"
+            apiKeyMessageColor = .secondary
+        } else if !key.hasPrefix("sk-") {
+            apiKeyMessage = "API key should start with 'sk-'"
+            apiKeyMessageColor = .orange
+        } else if key.count < 20 {
+            apiKeyMessage = "API key seems too short"
+            apiKeyMessageColor = .orange
+        } else {
+            apiKeyMessage = "API key format looks valid"
+            apiKeyMessageColor = .green
         }
     }
 }
 
-struct SettingsView: View {
-    @Binding var isPresented: Bool
-    @AppStorage("openAIApiKey") private var apiKey: String = ""
-    @AppStorage("customPrompt") private var customPrompt: String = ""
-    @State private var apiKeyMessage: String = ""
-    @State private var apiKeyMessageColor: Color = .secondary
-    @State private var isTesting = false
+// MARK: - Subviews
+
+struct StatusSection: View {
+    let isRecording: Bool
     
     var body: some View {
-        VStack(spacing: 16) {
-            HStack {
-                Text("Settings")
-                    .font(.headline)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(isRecording ? Color.red : Color.green)
+                    .frame(width: 10, height: 10)
                 
-                Spacer()
-                
-                Button("Done") {
-                    isPresented = false
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
+                Text(isRecording ? "Recording..." : "Ready")
+                    .font(.system(.subheadline, design: .rounded, weight: .medium))
             }
             
-            VStack(alignment: .leading) {
+            Text("Hold **Right Option** to record")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 4)
+    }
+}
+
+struct LastTranscriptionSection: View {
+    let text: String
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Last Transcription")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            
+            Text(text)
+                .font(.body)
+                .lineLimit(3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+struct SettingsSection: View {
+    @Binding var apiKey: String
+    @Binding var customPrompt: String
+    @Binding var apiKeyMessage: String
+    @Binding var apiKeyMessageColor: Color
+    @Binding var isTesting: Bool
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Settings")
+                .font(.headline)
+                .foregroundColor(.primary)
+                .padding(.top, 4)
+            
+            // API Key
+            VStack(alignment: .leading, spacing: 4) {
                 Text("OpenAI API Key")
                     .font(.caption)
                     .foregroundColor(.secondary)
@@ -129,48 +180,49 @@ struct SettingsView: View {
                 }
             }
             
-            VStack(alignment: .leading) {
+            // Custom Prompt
+            VStack(alignment: .leading, spacing: 4) {
                 Text("Custom Prompt")
                     .font(.caption)
                     .foregroundColor(.secondary)
                 
                 TextEditor(text: $customPrompt)
                     .font(.body)
-                    .border(Color.secondary.opacity(0.3), width: 1)
-                    .frame(height: 100)
-                    .cornerRadius(4)
+                    .padding(4)
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3), lineWidth: 1))
+                    .frame(height: 80)
                 
-                Text("This prompt is sent to the transcription model for better context.")
+                Text("Add context to improve transcription accuracy")
                     .font(.caption2)
                     .foregroundColor(.secondary)
             }
             
-            Spacer()
-            
-            Text("Accessibility permission is required for key monitoring and text injection.")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-            
-            Button("Open Accessibility Settings") {
-                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+            // Accessibility settings
+            VStack(spacing: 6) {
+                Text("Accessibility permission is required for key monitoring")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                
+                Button("Open Accessibility Settings") {
+                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
             }
-        }
-        .padding()
-        .onAppear {
-            validateApiKey(apiKey)
+            .padding(.top, 4)
         }
     }
     
     private func validateApiKey(_ key: String) {
         if key.isEmpty {
-            apiKeyMessage = "Enter your OpenAI API key to use the transcription service."
+            apiKeyMessage = "Enter your OpenAI API key"
             apiKeyMessageColor = .secondary
         } else if !key.hasPrefix("sk-") {
-            apiKeyMessage = "Warning: API key should start with 'sk-'"
+            apiKeyMessage = "API key should start with 'sk-'"
             apiKeyMessageColor = .orange
         } else if key.count < 20 {
-            apiKeyMessage = "Warning: API key seems too short"
+            apiKeyMessage = "API key seems too short"
             apiKeyMessageColor = .orange
         } else {
             apiKeyMessage = "API key format looks valid"

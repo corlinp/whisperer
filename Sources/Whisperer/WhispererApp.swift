@@ -11,6 +11,11 @@ struct WhispererApp: App {
         MenuBarExtra {
             ContentView()
                 .environmentObject(statusBarController)
+                // Fix for menu bar closing when clicking inside
+                .onTapGesture {
+                    // This empty gesture interceptor prevents propagation of 
+                    // tap events to the parent view which would close the menu
+                }
         } label: {
             // Use the dynamic icon based on recording state
             Image(systemName: statusBarController.getStatusIcon())
@@ -19,9 +24,11 @@ struct WhispererApp: App {
         }
         .menuBarExtraStyle(.window)
         
-        // Add a settings window
+        // Settings can now be accessed through the main view
+        // We'll retain this for system-wide settings menu access
         Settings {
-            SettingsView(isPresented: $showingSettings)
+            Text("Settings are available directly from the app's menu bar icon.")
+                .frame(width: 300, height: 100)
         }
     }
     
@@ -34,8 +41,5 @@ struct WhispererApp: App {
         // For macOS, we don't need explicit microphone permission request
         // as that will be handled when we first use the microphone
         print("App initialized, permissions will be requested when needed.")
-        
-        // We can't programmatically request accessibility access,
-        // so we'll show a prompt in the UI
     }
 } 

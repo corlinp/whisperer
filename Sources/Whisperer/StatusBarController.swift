@@ -15,6 +15,10 @@ class StatusBarController: ObservableObject {
     private let idleIcon = "waveform"
     private let recordingIcon = "waveform.circle.fill"
     
+    // Feedback sounds
+    private let startSound = NSSound(named: "Pop")
+    private let endSound = NSSound(named: "Blow")
+    
     init() {
         setupKeyMonitor()
         setupAudioRecorder()
@@ -64,7 +68,7 @@ class StatusBarController: ObservableObject {
                 self.lastTranscribedText = text
             }
             
-            print("Current transcribed text: \"\(currentTranscribedText)\"")
+            // Inject the transcribed text to the active application
             self.textInjector.injectText(currentTranscribedText)
         }
     }
@@ -84,7 +88,7 @@ class StatusBarController: ObservableObject {
         textInjector.reset()
         
         // Play sound to indicate recording started
-        NSSound.beep()
+        startSound?.play()
     }
     
     func stopRecording() {
@@ -99,7 +103,7 @@ class StatusBarController: ObservableObject {
         transcriptionService.disconnect()
         
         // Play sound to indicate recording stopped
-        NSSound.beep()
+        endSound?.play()
     }
     
     func getStatusIcon() -> String {

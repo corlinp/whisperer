@@ -8,6 +8,7 @@ class KeyMonitor {
     fileprivate var isRightOptionPressed = false
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
+    private let logEnabled = false
     
     var onRightOptionKeyDown: (() -> Void)?
     var onRightOptionKeyUp: (() -> Void)?
@@ -32,7 +33,7 @@ class KeyMonitor {
             callback: eventTapCallback,
             userInfo: Unmanaged.passRetained(self).toOpaque()
         ) else {
-            print("Failed to create event tap")
+            log("Failed to create event tap")
             return
         }
         
@@ -42,7 +43,7 @@ class KeyMonitor {
         if let runLoopSource = runLoopSource {
             CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
             CGEvent.tapEnable(tap: eventTap, enable: true)
-            print("Key monitor started")
+            log("Key monitor started")
         }
     }
     
@@ -57,7 +58,13 @@ class KeyMonitor {
             self.eventTap = nil
         }
         
-        print("Key monitor stopped")
+        log("Key monitor stopped")
+    }
+    
+    private func log(_ message: String) {
+        if logEnabled {
+            print("[KeyMonitor] \(message)")
+        }
     }
 }
 

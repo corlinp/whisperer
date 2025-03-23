@@ -10,6 +10,7 @@ A macOS menu bar app that transcribes speech in real-time and types the transcri
 - Injects the transcribed text into your active text field 
 - Works system-wide in any application
 - Configurable prompt for improved transcription context
+- Clean, modern interface with integrated settings
 
 ## Requirements
 
@@ -28,11 +29,10 @@ A macOS menu bar app that transcribes speech in real-time and types the transcri
 ### Setting up Your API Key
 
 1. Click on the Whisperer menu bar icon
-2. Click on the settings icon (gear)
-3. Enter your OpenAI API key
+2. Click on the gear icon to show settings
+3. Enter your OpenAI API key in the API Key field
 4. Click "Test" to verify your API key works with the OpenAI API
 5. Customize the prompt to improve transcription for your use case
-6. Click "Done" to save your settings
 
 ### Granting Permissions
 
@@ -47,11 +47,20 @@ To grant Accessibility access:
 
 ## Usage
 
-1. Click the Whisperer icon in your menu bar to see its status
+1. Click the Whisperer icon in your menu bar to open the interface
 2. Position your cursor where you want text to appear
 3. Hold down the right Option key and speak
 4. Release the Option key when you're done
 5. The transcribed text will be typed into your active application
+
+## Interface
+
+- **Status Indicator**: Shows whether the app is ready or recording
+- **Last Transcription**: Displays your most recently transcribed text
+- **Settings**: Easily accessible through the gear icon
+  - API Key Management: Enter and test your OpenAI API key
+  - Custom Prompt: Add context to improve transcription accuracy
+  - Accessibility Settings: Quick access to system permissions
 
 ## How It Works
 
@@ -72,6 +81,5 @@ To grant Accessibility access:
 - If the app isn't responding to the right Option key, try restarting the app
 - Check the OpenAI API key in settings if transcription isn't working
 - Use the "Test" button in Settings to verify your API key is valid
-- Check the terminal output for detailed error messages when running in development
 - Make sure your internet connection is stable for WebSocket communication
 - Consider using a more specific custom prompt for better transcription of domain-specific terms 
