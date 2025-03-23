@@ -117,30 +117,28 @@ struct StatusSection: View {
     private var statusColor: Color {
         if isRecording {
             return .red
-        } else if connectionState == "Connected" {
-            return .green
-        } else if connectionState == "Connecting" {
-            return .orange
-        } else if connectionState == "Finalizing" {
+        } else if connectionState == "Transcribing" {
             return .blue
+        } else if connectionState == "Recording" {
+            return .orange
+        } else if connectionState == "Error" {
+            return .red
         } else {
-            return .gray
+            return .green
         }
     }
     
     private var statusText: String {
         if isRecording {
             return "Recording..."
-        } else if connectionState == "Connected" {
-            return "Ready"
-        } else if connectionState == "Connecting" {
-            return "Connecting..."
-        } else if connectionState == "Finalizing" {
-            return "Finalizing transcription..."
-        } else if connectionState == "Disconnecting" {
-            return "Finishing up..."
+        } else if connectionState == "Transcribing" {
+            return "Transcribing..."
+        } else if connectionState == "Recording" {
+            return "Recording..."
+        } else if connectionState == "Error" {
+            return "Error"
         } else {
-            return "Idle"
+            return "Ready"
         }
     }
 }

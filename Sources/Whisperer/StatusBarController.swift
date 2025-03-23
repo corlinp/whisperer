@@ -5,7 +5,7 @@ class StatusBarController: ObservableObject {
     @Published var isMenuOpen = false
     @Published var isRecording = false
     @Published var lastTranscribedText = ""
-    @Published var connectionState = "Disconnected"
+    @Published var connectionState = "Idle"
     
     private let keyMonitor = KeyMonitor()
     private let audioRecorder = AudioRecorder()
@@ -34,7 +34,7 @@ class StatusBarController: ObservableObject {
         
         keyMonitor.onRightOptionKeyUp = { [weak self] in
             guard let self = self else { return }
-            self.prepareToStopRecording()
+            self.stopRecording()
         }
         
         // Start monitoring keys
@@ -42,9 +42,10 @@ class StatusBarController: ObservableObject {
     }
     
     private func setupAudioRecorder() {
-        audioRecorder.onAudioBufferCaptured = { [weak self] buffer in
+        audioRecorder.onRecordingComplete = { [weak self] audioData in
             guard let self = self else { return }
-            self.transcriptionService.sendAudioBuffer(buffer)
+            // Send the complete audio data for transcription
+            self.transcriptionService.finishRecording(withAudioData: audioData)
         }
     }
     
@@ -55,43 +56,32 @@ class StatusBarController: ObservableObject {
             
             DispatchQueue.main.async {
                 switch state {
-                case .disconnected:
-                    self.connectionState = "Disconnected"
-                case .connecting:
-                    self.connectionState = "Connecting"
-                case .connected:
-                    self.connectionState = "Connected"
-                case .awaitingTranscription:
-                    self.connectionState = "Finalizing"
-                case .disconnecting:
-                    self.connectionState = "Disconnecting"
+                case .idle:
+                    self.connectionState = "Idle"
+                case .recording:
+                    self.connectionState = "Recording"
+                case .transcribing:
+                    self.connectionState = "Transcribing"
+                case .error:
+                    self.connectionState = "Error"
                 }
             }
         }
         
-        // Track transcribed text
+        // Initialize accumulator for transcribed text
         var currentTranscribedText = ""
         
         transcriptionService.onTranscriptionReceived = { [weak self] text in
             guard let self = self else { return }
             
-            // Check if this is a delta update or a full text update
-            if text.count <= 2 || text.hasPrefix(" ") {
-                // This is likely a delta - append to current text
+            DispatchQueue.main.async {
+                // For the SSE streaming API, we'll receive text deltas to append
                 currentTranscribedText += text
                 self.lastTranscribedText = currentTranscribedText
-            } else if text.count < currentTranscribedText.count {
-                // This appears to be a new utterance - replace the text
-                currentTranscribedText = text
-                self.lastTranscribedText = text
-            } else {
-                // This appears to be a complete text - use it directly
-                currentTranscribedText = text
-                self.lastTranscribedText = text
+                
+                // Inject the transcribed text delta to the active application
+                self.textInjector.injectText(text)
             }
-            
-            // Inject the transcribed text to the active application
-            self.textInjector.injectText(currentTranscribedText)
         }
     }
     
@@ -99,6 +89,12 @@ class StatusBarController: ObservableObject {
         guard !isRecording else { return }
         
         isRecording = true
+        
+        // Reset text accumulation
+        lastTranscribedText = ""
+        
+        // Tell the transcription service we're starting to record
+        transcriptionService.startRecording()
         
         // Start audio recording immediately so no audio is missed
         audioRecorder.startRecording()
@@ -108,25 +104,18 @@ class StatusBarController: ObservableObject {
         
         // Play sound to indicate recording started
         startSound?.play()
-        
-        // Connect to OpenAI transcription service
-        // Audio captured during connection will be buffered and sent once connected
-        transcriptionService.connect()
     }
     
-    func prepareToStopRecording() {
+    func stopRecording() {
         guard isRecording else { return }
         
         // Stop audio recording immediately
+        // This will trigger the onRecordingComplete callback which sends the audio data to the transcription service
         audioRecorder.stopRecording()
         isRecording = false
         
         // Play sound to indicate recording stopped
         endSound?.play()
-        
-        // Tell transcription service to prepare for disconnect
-        // This will keep the connection open until transcription is completed
-        transcriptionService.prepareForDisconnect()
     }
     
     func getStatusIcon() -> String {
@@ -140,6 +129,6 @@ class StatusBarController: ObservableObject {
             audioRecorder.stopRecording()
         }
         
-        transcriptionService.disconnect()
+        transcriptionService.cancelTranscription()
     }
 } 

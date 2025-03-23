@@ -11,8 +11,8 @@ class AudioRecorder: NSObject {
     // Buffer size for audio capture (samples)
     private let bufferSize: AVAudioFrameCount = 1024
     
-    // Callback for when new audio buffer is captured
-    var onAudioBufferCaptured: ((AVAudioPCMBuffer) -> Void)?
+    // Callback for when audio buffer has been completely captured
+    var onRecordingComplete: ((Data) -> Void)?
     
     override init() {
         super.init()
@@ -33,7 +33,6 @@ class AudioRecorder: NSObject {
             
             // Convert to the format we need (16kHz, 16-bit, mono) for the transcription service
             if let convertedBuffer = self.convertBufferToFormat(buffer) {
-                self.onAudioBufferCaptured?(convertedBuffer)
                 self.audioBuffers.append(convertedBuffer)
             }
         }
@@ -41,6 +40,8 @@ class AudioRecorder: NSObject {
     
     private func convertBufferToFormat(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
         // Target format: 16kHz, 16-bit, mono for OpenAI transcription
+        // The API accepts flac, mp3, mp4, mpeg, mpga, m4a, ogg, wav, or webm
+        // We'll use 16kHz, 16-bit, mono PCM which is compatible with their processing
         let targetFormat = AVAudioFormat(commonFormat: .pcmFormatInt16,
                                          sampleRate: 16000,
                                          channels: 1,
@@ -102,12 +103,19 @@ class AudioRecorder: NSObject {
         isRecording = false
         log("Audio recording stopped")
         
+        // Get the audio data and call the completion handler
+        if let audioData = getAudioData() {
+            onRecordingComplete?(audioData)
+        } else {
+            log("No audio data captured")
+        }
+        
         // Reinstall tap for next recording
         setupAudioEngine()
     }
     
     // Convert the current audio buffer to 16-bit PCM data
-    func getAudioData() -> Data? {
+    private func getAudioData() -> Data? {
         guard !audioBuffers.isEmpty else { return nil }
         
         // Combine all audio buffers into one data object
