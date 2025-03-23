@@ -127,8 +127,8 @@ class TextInjector {
             return
         }
         
-        var keyDownEvent = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true)
-        var keyUpEvent = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false)
+        let keyDownEvent = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true)
+        let keyUpEvent = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false)
         
         if needsShift {
             // Shift key down

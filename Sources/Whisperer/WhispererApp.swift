@@ -5,6 +5,7 @@ import AVKit
 @main
 struct WhispererApp: App {
     @StateObject private var statusBarController = StatusBarController()
+    @State private var showingSettings = false
     
     var body: some Scene {
         MenuBarExtra {
@@ -20,7 +21,7 @@ struct WhispererApp: App {
         
         // Add a settings window
         Settings {
-            SettingsView()
+            SettingsView(isPresented: $showingSettings)
         }
     }
     

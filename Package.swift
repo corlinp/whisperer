@@ -15,7 +15,13 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "Whisperer",
-            dependencies: []
+            dependencies: [],
+            resources: [
+                .process("Resources/Assets")
+            ],
+            swiftSettings: [
+                .define("DEBUG", .when(configuration: .debug))
+            ]
         )
     ]
 ) 

@@ -9,6 +9,7 @@ A macOS menu bar app that transcribes speech in real-time and types the transcri
 - Automatically transcribes your speech using OpenAI's GPT-4o-transcribe model
 - Injects the transcribed text into your active text field 
 - Works system-wide in any application
+- Configurable prompt for improved transcription context
 
 ## Requirements
 
@@ -29,7 +30,9 @@ A macOS menu bar app that transcribes speech in real-time and types the transcri
 1. Click on the Whisperer menu bar icon
 2. Click on the settings icon (gear)
 3. Enter your OpenAI API key
-4. The app will automatically save your key
+4. Click "Test" to verify your API key works with the OpenAI API
+5. Customize the prompt to improve transcription for your use case
+6. Click "Done" to save your settings
 
 ### Granting Permissions
 
@@ -67,4 +70,8 @@ To grant Accessibility access:
 
 - If text isn't appearing, make sure you've granted Accessibility permissions
 - If the app isn't responding to the right Option key, try restarting the app
-- Check the OpenAI API key in settings if transcription isn't working 
+- Check the OpenAI API key in settings if transcription isn't working
+- Use the "Test" button in Settings to verify your API key is valid
+- Check the terminal output for detailed error messages when running in development
+- Make sure your internet connection is stable for WebSocket communication
+- Consider using a more specific custom prompt for better transcription of domain-specific terms 
