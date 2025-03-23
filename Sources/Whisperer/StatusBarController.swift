@@ -5,6 +5,7 @@ class StatusBarController: ObservableObject {
     @Published var isMenuOpen = false
     @Published var isRecording = false
     @Published var lastTranscribedText = ""
+    @Published var connectionState = "Disconnected"
     
     private let keyMonitor = KeyMonitor()
     private let audioRecorder = AudioRecorder()
@@ -33,7 +34,7 @@ class StatusBarController: ObservableObject {
         
         keyMonitor.onRightOptionKeyUp = { [weak self] in
             guard let self = self else { return }
-            self.stopRecording()
+            self.prepareToStopRecording()
         }
         
         // Start monitoring keys
@@ -48,6 +49,27 @@ class StatusBarController: ObservableObject {
     }
     
     private func setupTranscriptionService() {
+        // Track connection state
+        transcriptionService.onConnectionStateChanged = { [weak self] state in
+            guard let self = self else { return }
+            
+            DispatchQueue.main.async {
+                switch state {
+                case .disconnected:
+                    self.connectionState = "Disconnected"
+                case .connecting:
+                    self.connectionState = "Connecting"
+                case .connected:
+                    self.connectionState = "Connected"
+                case .awaitingTranscription:
+                    self.connectionState = "Finalizing"
+                case .disconnecting:
+                    self.connectionState = "Disconnecting"
+                }
+            }
+        }
+        
+        // Track transcribed text
         var currentTranscribedText = ""
         
         transcriptionService.onTranscriptionReceived = { [weak self] text in
@@ -78,10 +100,7 @@ class StatusBarController: ObservableObject {
         
         isRecording = true
         
-        // Connect to OpenAI transcription service
-        transcriptionService.connect()
-        
-        // Start audio recording
+        // Start audio recording immediately so no audio is missed
         audioRecorder.startRecording()
         
         // Reset text injector
@@ -89,21 +108,25 @@ class StatusBarController: ObservableObject {
         
         // Play sound to indicate recording started
         startSound?.play()
+        
+        // Connect to OpenAI transcription service
+        // Audio captured during connection will be buffered and sent once connected
+        transcriptionService.connect()
     }
     
-    func stopRecording() {
+    func prepareToStopRecording() {
         guard isRecording else { return }
         
-        isRecording = false
-        
-        // Stop audio recording
+        // Stop audio recording immediately
         audioRecorder.stopRecording()
-        
-        // Disconnect from transcription service
-        transcriptionService.disconnect()
+        isRecording = false
         
         // Play sound to indicate recording stopped
         endSound?.play()
+        
+        // Tell transcription service to prepare for disconnect
+        // This will keep the connection open until transcription is completed
+        transcriptionService.prepareForDisconnect()
     }
     
     func getStatusIcon() -> String {
@@ -112,6 +135,11 @@ class StatusBarController: ObservableObject {
     
     deinit {
         keyMonitor.stop()
-        stopRecording()
+        
+        if isRecording {
+            audioRecorder.stopRecording()
+        }
+        
+        transcriptionService.disconnect()
     }
 } 

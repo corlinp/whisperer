@@ -33,7 +33,10 @@ struct ContentView: View {
             Divider()
             
             // Status section
-            StatusSection(isRecording: statusController.isRecording)
+            StatusSection(
+                isRecording: statusController.isRecording,
+                connectionState: statusController.connectionState
+            )
             
             // Last transcription (if any)
             if !statusController.lastTranscribedText.isEmpty {
@@ -90,15 +93,16 @@ struct ContentView: View {
 
 struct StatusSection: View {
     let isRecording: Bool
+    let connectionState: String
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Circle()
-                    .fill(isRecording ? Color.red : Color.green)
+                    .fill(statusColor)
                     .frame(width: 10, height: 10)
                 
-                Text(isRecording ? "Recording..." : "Ready")
+                Text(statusText)
                     .font(.system(.subheadline, design: .rounded, weight: .medium))
             }
             
@@ -108,6 +112,36 @@ struct StatusSection: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 4)
+    }
+    
+    private var statusColor: Color {
+        if isRecording {
+            return .red
+        } else if connectionState == "Connected" {
+            return .green
+        } else if connectionState == "Connecting" {
+            return .orange
+        } else if connectionState == "Finalizing" {
+            return .blue
+        } else {
+            return .gray
+        }
+    }
+    
+    private var statusText: String {
+        if isRecording {
+            return "Recording..."
+        } else if connectionState == "Connected" {
+            return "Ready"
+        } else if connectionState == "Connecting" {
+            return "Connecting..."
+        } else if connectionState == "Finalizing" {
+            return "Finalizing transcription..."
+        } else if connectionState == "Disconnecting" {
+            return "Finishing up..."
+        } else {
+            return "Idle"
+        }
     }
 }
 
