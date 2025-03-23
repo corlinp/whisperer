@@ -216,10 +216,40 @@ def on_release(key):
 
 if __name__ == "__main__":
     try:
-        # Start listening for the hotkey
-        with keyboard.Listener(on_press=on_press, on_release=on_release) as listener:
-            print("Listening for hotkey...")
-            listener.join()
+        # Get the terminal binary path
+        terminal_path = os.path.realpath(sys.executable)
+        
+        # Create the listener without using a context manager
+        listener = keyboard.Listener(on_press=on_press, on_release=on_release)
+        listener.start()
+        
+        # Check if the listener actually started
+        if not listener.is_alive():
+            print("Failed to start listener")
+            print("\nIMPORTANT: On macOS, this application requires accessibility permissions.")
+            print("Please add this binary to System Settings > Privacy & Security > Accessibility")
+            print(f"Binary path: {terminal_path}")
+            sys.exit(1)
+            
+        print("Listening for hotkey...")
+        print("Note: If hotkeys aren't working, ensure this binary has both:")
+        print("1. Input Monitoring permissions")
+        print("2. Accessibility permissions")
+        print(f"Binary path: {terminal_path}")
+        
+        # Keep the main thread running
+        while True:
+            time.sleep(1)
+            
     except KeyboardInterrupt:
         print("Exiting...")
+        listener.stop()
         sys.exit(0)
+    except Exception as e:
+        print(f"\nERROR: An unexpected error occurred: {e}")
+        print("\nIf you're on macOS, please verify both permissions are granted for:")
+        print(f"Binary path: {terminal_path}")
+        print("\nIn these locations:")
+        print("1. System Settings > Privacy & Security > Input Monitoring")
+        print("2. System Settings > Privacy & Security > Accessibility")
+        sys.exit(1)
