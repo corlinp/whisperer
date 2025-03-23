@@ -1,5 +1,0 @@
-numpy
-pyaudio
-pyautogui
-pynput
-requests
