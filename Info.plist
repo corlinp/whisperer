@@ -30,5 +30,16 @@
     <string>NSApplication</string>
     <key>LSUIElement</key>
     <true/>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <true/>
+    </dict>
+    <key>NSBackgroundTasksEnabled</key>
+    <true/>
+    <key>NSUserActivityTypes</key>
+    <array>
+        <string>INStartAudioCallIntent</string>
+    </array>
 </dict>
 </plist> 

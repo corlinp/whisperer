@@ -44,10 +44,28 @@ class StatusBarController: ObservableObject {
     }
     
     private func setupTranscriptionService() {
+        var currentTranscribedText = ""
+        
         transcriptionService.onTranscriptionReceived = { [weak self] text in
             guard let self = self else { return }
-            self.lastTranscribedText = text
-            self.textInjector.injectText(text)
+            
+            // Check if this is a delta update or a full text update
+            if text.count <= 2 || text.hasPrefix(" ") {
+                // This is likely a delta - append to current text
+                currentTranscribedText += text
+                self.lastTranscribedText = currentTranscribedText
+            } else if text.count < currentTranscribedText.count {
+                // This appears to be a new utterance - replace the text
+                currentTranscribedText = text
+                self.lastTranscribedText = text
+            } else {
+                // This appears to be a complete text - use it directly
+                currentTranscribedText = text
+                self.lastTranscribedText = text
+            }
+            
+            print("Current transcribed text: \"\(currentTranscribedText)\"")
+            self.textInjector.injectText(currentTranscribedText)
         }
     }
     

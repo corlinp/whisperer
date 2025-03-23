@@ -92,4 +92,4 @@ private func eventTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: 
     }
     
     return Unmanaged.passRetained(event)
-} 
+}
