@@ -7,7 +7,6 @@ struct ContentView: View {
     @State private var apiKeyMessage: String = ""
     @State private var apiKeyMessageColor: Color = .secondary
     @State private var isTesting = false
-    @State private var showSettings = false
     
     var body: some View {
         VStack(spacing: 12) {
@@ -18,16 +17,6 @@ struct ContentView: View {
                     .foregroundColor(.primary)
                 
                 Spacer()
-                
-                Button(action: {
-                    showSettings.toggle()
-                }) {
-                    Image(systemName: showSettings ? "chevron.down" : "gear")
-                        .imageScale(.medium)
-                }
-                .buttonStyle(.borderless)
-                .contentShape(Rectangle())
-                .help(showSettings ? "Hide settings" : "Show settings")
             }
             
             Divider()
@@ -38,23 +27,24 @@ struct ContentView: View {
                 connectionState: statusController.connectionState
             )
             
-            // Last transcription (if any)
-            if !statusController.lastTranscribedText.isEmpty {
-                Divider()
-                LastTranscriptionSection(text: statusController.lastTranscribedText)
-            }
+            Divider()
             
-            // Settings section (collapsible)
-            if showSettings {
-                Divider()
-                SettingsSection(
-                    apiKey: $apiKey,
-                    customPrompt: $customPrompt,
-                    apiKeyMessage: $apiKeyMessage,
-                    apiKeyMessageColor: $apiKeyMessageColor,
-                    isTesting: $isTesting
-                )
-            }
+            // Transcription history section
+            TranscriptionHistorySection(
+                currentText: statusController.lastTranscribedText,
+                history: statusController.transcriptionHistory
+            )
+            
+            Divider()
+            
+            // Settings section (always shown)
+            SettingsSection(
+                apiKey: $apiKey,
+                customPrompt: $customPrompt,
+                apiKeyMessage: $apiKeyMessage,
+                apiKeyMessageColor: $apiKeyMessageColor,
+                isTesting: $isTesting
+            )
             
             Spacer()
             
@@ -143,21 +133,73 @@ struct StatusSection: View {
     }
 }
 
-struct LastTranscriptionSection: View {
-    let text: String
+struct TranscriptionHistorySection: View {
+    let currentText: String
+    let history: [String]
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Last Transcription")
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Transcription History")
                 .font(.caption)
                 .foregroundColor(.secondary)
             
-            Text(text)
-                .font(.body)
-                .lineLimit(3)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            // Display current transcription if we're recording
+            if !currentText.isEmpty {
+                transcriptionRow(text: currentText, isCurrent: true)
+            }
+            
+            // Display last three transcriptions
+            ForEach(history.indices, id: \.self) { index in
+                transcriptionRow(text: history[index], isCurrent: false)
+            }
+            
+            // Show placeholder if no history
+            if currentText.isEmpty && history.isEmpty {
+                Text("No transcriptions yet")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.vertical, 2)
+            }
         }
-        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    
+    private func transcriptionRow(text: String, isCurrent: Bool) -> some View {
+        HStack(alignment: .top) {
+            // Show preview of text (first 30 chars or so)
+            Text(previewText(text))
+                .font(.body)
+                .lineLimit(1)
+                .foregroundColor(isCurrent ? .blue : .primary)
+            
+            Spacer()
+            
+            // Copy button
+            Button(action: {
+                copyToClipboard(text)
+            }) {
+                Image(systemName: "doc.on.doc")
+                    .imageScale(.small)
+            }
+            .buttonStyle(.borderless)
+            .help("Copy to clipboard")
+        }
+        .padding(.vertical, 2)
+    }
+    
+    private func previewText(_ text: String) -> String {
+        if text.count <= 30 {
+            return text
+        } else {
+            let index = text.index(text.startIndex, offsetBy: 30)
+            return String(text[..<index]) + "..."
+        }
+    }
+    
+    private func copyToClipboard(_ text: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
     }
 }
 
@@ -168,12 +210,13 @@ struct SettingsSection: View {
     @Binding var apiKeyMessageColor: Color
     @Binding var isTesting: Bool
     
+    @State private var isEditing = false
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Settings")
                 .font(.headline)
                 .foregroundColor(.primary)
-                .padding(.top, 4)
             
             // API Key
             VStack(alignment: .leading, spacing: 4) {
@@ -181,11 +224,37 @@ struct SettingsSection: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
                 
-                SecureField("sk-...", text: $apiKey)
-                    .textFieldStyle(.roundedBorder)
-                    .onChange(of: apiKey) { newValue in
-                        validateApiKey(newValue)
+                HStack {
+                    if isEditing {
+                        SecureField("sk-...", text: $apiKey)
+                            .textFieldStyle(.roundedBorder)
+                            .onChange(of: apiKey) { newValue in
+                                validateApiKey(newValue)
+                            }
+                            .onSubmit {
+                                isEditing = false
+                            }
+                    } else {
+                        Text(maskedApiKey)
+                            .font(.body)
+                            .padding(6)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color(.textBackgroundColor))
+                            .cornerRadius(6)
+                            .onTapGesture {
+                                isEditing = true
+                            }
                     }
+                    
+                    Button(action: {
+                        isEditing.toggle()
+                    }) {
+                        Image(systemName: isEditing ? "checkmark" : "pencil")
+                            .imageScale(.small)
+                    }
+                    .buttonStyle(.borderless)
+                    .help(isEditing ? "Save" : "Edit")
+                }
                 
                 HStack {
                     if !apiKeyMessage.isEmpty {
@@ -243,6 +312,17 @@ struct SettingsSection: View {
                 .controlSize(.small)
             }
             .padding(.top, 4)
+        }
+    }
+    
+    private var maskedApiKey: String {
+        if apiKey.isEmpty {
+            return "No API key set"
+        } else {
+            // Show first 10 characters
+            let visibleCount = min(10, apiKey.count)
+            let visiblePart = apiKey.prefix(visibleCount)
+            return "\(visiblePart)••••••••••••"
         }
     }
     

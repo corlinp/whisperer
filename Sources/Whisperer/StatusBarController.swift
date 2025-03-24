@@ -5,7 +5,11 @@ class StatusBarController: ObservableObject {
     @Published var isMenuOpen = false
     @Published var isRecording = false
     @Published var lastTranscribedText = ""
+    @Published var transcriptionHistory: [String] = []
     @Published var connectionState = "Idle"
+    
+    // Maximum number of transcriptions to keep in history
+    private let maxHistoryItems = 3
     
     private let keyMonitor = KeyMonitor()
     private let audioRecorder = AudioRecorder()
@@ -113,6 +117,16 @@ class StatusBarController: ObservableObject {
         // This will trigger the onRecordingComplete callback which sends the audio data to the transcription service
         audioRecorder.stopRecording()
         isRecording = false
+        
+        // Save the last transcription to history when recording stops
+        if !lastTranscribedText.isEmpty {
+            DispatchQueue.main.async {
+                self.transcriptionHistory.insert(self.lastTranscribedText, at: 0)
+                if self.transcriptionHistory.count > self.maxHistoryItems {
+                    self.transcriptionHistory.removeLast()
+                }
+            }
+        }
         
         // Play sound to indicate recording stopped
         endSound?.play()
