@@ -14,6 +14,7 @@ class StatusBarController: ObservableObject {
     @Published var transcriptionHistory: [String] = []
     @Published var connectionState = "Idle"
     @Published var lastTranscriptionDuration: Double? = nil
+    @Published var isToggleMode = false
     
     // Maximum number of transcriptions to keep in history
     private let maxHistoryItems = 3
@@ -23,10 +24,15 @@ class StatusBarController: ObservableObject {
     
     // For tracking recording duration
     private var recordingStartTime: Date? = nil
+    private var keyPressStartTime: Date? = nil
     
     // For tracking transcription timeouts
     private var transcriptionTimeoutTask: Task<Void, Never>? = nil
     private let transcriptionTimeout: TimeInterval = 30 // seconds
+    
+    // For auto-stopping long recordings
+    private var recordingAutoStopTask: Task<Void, Never>? = nil
+    private let maxRecordingTime: TimeInterval = 300 // 5 minutes in seconds
     
     private let keyMonitor = KeyMonitor()
     private let audioRecorder = AudioRecorder()
@@ -56,12 +62,45 @@ class StatusBarController: ObservableObject {
     private func setupKeyMonitor() {
         keyMonitor.onRightOptionKeyDown = { [weak self] in
             guard let self = self else { return }
-            self.startRecording()
+            // Store key press start time for measuring duration
+            self.keyPressStartTime = Date()
+            
+            if !self.isRecording {
+                // Start recording if not already recording
+                self.startRecording()
+            }
         }
         
         keyMonitor.onRightOptionKeyUp = { [weak self] in
             guard let self = self else { return }
-            self.stopRecording()
+            
+            if let keyPressStart = self.keyPressStartTime {
+                let keyPressDuration = Date().timeIntervalSince(keyPressStart)
+                
+                if keyPressDuration < 0.5 {
+                    // Short key press
+                    if self.isRecording {
+                        if self.isToggleMode {
+                            // We're in toggle mode and recording, so stop recording
+                            self.stopRecording()
+                            self.isToggleMode = false
+                        } else {
+                            // We just started recording with a short press, enable toggle mode
+                            // so the recording continues until next key press
+                            self.isToggleMode = true
+                        }
+                    }
+                } else {
+                    // Long key press: traditional hold-to-record behavior
+                    if !self.isToggleMode {
+                        // Only stop if we're not in toggle mode
+                        self.stopRecording()
+                    }
+                }
+            }
+            
+            // Reset the key press start time
+            self.keyPressStartTime = nil
         }
         
         // Start monitoring keys
@@ -234,17 +273,58 @@ class StatusBarController: ObservableObject {
         
         // Play sound to indicate recording started
         startSound?.play()
+        
+        // Set up auto-stop for long recordings
+        startRecordingAutoStop()
+    }
+    
+    private func startRecordingAutoStop() {
+        // Cancel any existing auto-stop task
+        recordingAutoStopTask?.cancel()
+        
+        // Create a new auto-stop task
+        recordingAutoStopTask = Task { @MainActor in
+            do {
+                // Wait for the maximum recording duration
+                try await Task.sleep(nanoseconds: UInt64(maxRecordingTime * 1_000_000_000))
+                
+                // If we reach here without cancellation, recording has gone on too long
+                if self.isRecording {
+                    print("Recording automatically stopped after \(maxRecordingTime/60) minutes")
+                    
+                    // Provide feedback to the user
+                    NSSound(named: "Submarine")?.play()
+                    
+                    // Stop recording and reset toggle mode
+                    self.stopRecording()
+                    self.isToggleMode = false
+                    
+                    // Change last transcribed text to indicate auto-stop
+                    if !self.currentSessionText.isEmpty {
+                        self.currentSessionText += " [Auto-stopped after 5 minutes]"
+                        self.lastTranscribedText = self.currentSessionText
+                    }
+                }
+            } catch {
+                // Task was canceled, which is expected behavior
+            }
+        }
     }
     
     func stopRecording() {
         guard isRecording else { return }
+        
+        // Cancel auto-stop task
+        recordingAutoStopTask?.cancel()
+        recordingAutoStopTask = nil
         
         // Calculate recording duration
         if let startTime = recordingStartTime {
             let duration = Date().timeIntervalSince(startTime)
             
             // For short recordings (< 0.5 seconds), consider it a mistake and don't process
-            if duration < 0.5 {
+            // but only when not in toggle mode
+            if duration < 0.5 && !isToggleMode {
                 // Need to clean up resources without triggering the onRecordingComplete callback
                 isRecording = false
                 
@@ -304,6 +384,7 @@ class StatusBarController: ObservableObject {
         
         // Cancel any timeout tasks
         transcriptionTimeoutTask?.cancel()
+        recordingAutoStopTask?.cancel()
         
         // Create a fully detached task without any reference to self
         Task.detached {

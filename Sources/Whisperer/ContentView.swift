@@ -19,6 +19,13 @@ struct ContentView: View {
                     .foregroundColor(.primary)
                 
                 Spacer()
+                
+                // Quit button moved to top right
+                Button("Quit") {
+                    NSApplication.shared.terminate(nil)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
             }
             
             Divider()
@@ -26,7 +33,8 @@ struct ContentView: View {
             // Status section
             StatusSection(
                 isRecording: statusController.isRecording,
-                connectionState: statusController.connectionState
+                connectionState: statusController.connectionState,
+                isToggleMode: statusController.isToggleMode
             )
             
             Divider()
@@ -59,12 +67,21 @@ struct ContentView: View {
             
             Spacer()
             
-            // Quit button
-            Button("Quit") {
-                NSApplication.shared.terminate(nil)
+            // Footer with attribution and links
+            HStack(spacing: 8) {
+                Text("Created by Corlin Palmer, 2025")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                
+                Spacer()
+                
+                Link("GitHub", destination: URL(string: "https://github.com/corlinp/whisperer")!)
+                    .font(.caption2)
+                
+                Link("Website", destination: URL(string: "https://corlin.io/whisperer")!)
+                    .font(.caption2)
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
+            .padding(.top, 8)
         }
         .padding()
         .frame(width: 320)
@@ -138,6 +155,7 @@ struct ContentView: View {
 struct StatusSection: View {
     let isRecording: Bool
     let connectionState: String
+    let isToggleMode: Bool
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -150,9 +168,22 @@ struct StatusSection: View {
                     .font(.system(.subheadline, design: .rounded, weight: .medium))
             }
             
-            Text("Hold **Right Option** to record")
-                .font(.caption)
+            if isToggleMode && isRecording {
+                Text("Toggle mode active. Press **Right Option** again to stop")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } else {
+                Text(isToggleMode ? 
+                     "Quick tap **Right Option** to toggle recording on/off" : 
+                     "Hold **Right Option** to record")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            Text("Recording stops automatically after 5 minutes")
+                .font(.caption2)
                 .foregroundColor(.secondary)
+                .padding(.top, 2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 4)
@@ -197,8 +228,9 @@ struct TranscriptionHistorySection: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
             
-            // Display current transcription if we're recording
-            if !currentText.isEmpty {
+            // Display current transcription if we're recording or transcribing 
+            // but only if it's not already in the history
+            if !currentText.isEmpty && (history.isEmpty || currentText != history[0]) {
                 transcriptionRow(text: currentText, isCurrent: true)
             }
             
@@ -207,7 +239,7 @@ struct TranscriptionHistorySection: View {
                 transcriptionRow(text: history[index], isCurrent: false)
             }
             
-            // Show placeholder if no history
+            // Show placeholder if no transcriptions
             if currentText.isEmpty && history.isEmpty {
                 Text("No transcriptions yet")
                     .font(.caption)
