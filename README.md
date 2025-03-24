@@ -10,12 +10,14 @@ A macOS menu bar app that transcribes speech types the transcribed text into the
 - Injects the transcribed text into your active text field 
 - Works system-wide in any application
 - Configurable prompt for improved transcription context
+- Tracks usage metrics including total transcriptions, time, and cost
+- Completely open source with no external dependencies
 
 ## Requirements
 
 - macOS 13.0 or later
-- OpenAI API key with access to the gpt-4o-transcribe model
-- Xcode 15 or Swift 5.9+ toolchain for building
+- OpenAI API key
+- Swift 6.0+ toolchain for building
 
 ## Setup
 
