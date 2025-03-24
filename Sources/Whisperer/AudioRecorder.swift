@@ -156,6 +156,25 @@ class AudioRecorder: NSObject {
         return combinedData
     }
     
+    // Cancel recording without triggering the completion callback
+    // Used for very short recordings we want to discard
+    func cancelRecording() {
+        guard isRecording else { return }
+        
+        audioEngine.stop()
+        inputNode.removeTap(onBus: 0)
+        
+        isRecording = false
+        
+        log("Audio recording canceled (too short)")
+        
+        // Clear buffers
+        audioBuffers.removeAll()
+        
+        // Reinstall tap for next recording
+        setupAudioEngine()
+    }
+    
     private func log(_ message: String) {
         if logEnabled {
             print("[AudioRecorder] \(message)")

@@ -42,7 +42,8 @@ struct ContentView: View {
             // Usage metrics section
             UsageMetricsSection(
                 totalTranscriptions: totalTranscriptions,
-                totalTimeTranscribedSeconds: totalTimeTranscribedSeconds
+                totalTimeTranscribedSeconds: totalTimeTranscribedSeconds,
+                onReset: resetMetrics
             )
             
             Divider()
@@ -69,13 +70,33 @@ struct ContentView: View {
         .frame(width: 320)
         .onAppear {
             validateApiKey(apiKey)
+            setupNotifications()
         }
-        .onChange(of: statusController.transcriptionHistory) { newHistory in
-            // If we have a new transcription, update metrics
-            if let lastTranscriptionDuration = statusController.lastTranscriptionDuration {
-                updateMetrics(duration: lastTranscriptionDuration)
+        .onDisappear {
+            removeNotifications()
+        }
+    }
+    
+    private func setupNotifications() {
+        // Subscribe to transcription completed notifications
+        NotificationCenter.default.addObserver(
+            forName: .transcriptionCompleted,
+            object: nil,
+            queue: .main
+        ) { notification in
+            // Update metrics with the duration from notification
+            if let duration = notification.userInfo?["duration"] as? Double {
+                updateMetrics(duration: duration)
+            } else {
+                // If duration is missing for some reason, just increment count
+                // with a minimal duration to ensure it's counted
+                updateMetrics(duration: 0.1)
             }
         }
+    }
+    
+    private func removeNotifications() {
+        NotificationCenter.default.removeObserver(self, name: .transcriptionCompleted, object: nil)
     }
     
     private func validateApiKey(_ key: String) {
@@ -95,8 +116,20 @@ struct ContentView: View {
     }
     
     private func updateMetrics(duration: Double) {
-        totalTranscriptions += 1
-        totalTimeTranscribedSeconds += duration
+        // Only count transcriptions that are at least 0.5 seconds
+        // This helps avoid counting accidental key presses
+        if duration >= 0.5 {
+            totalTranscriptions += 1
+            totalTimeTranscribedSeconds += duration
+            
+            // AppStorage automatically triggers UI updates - no need for objectWillChange
+        }
+    }
+    
+    private func resetMetrics() {
+        totalTranscriptions = 0
+        totalTimeTranscribedSeconds = 0
+        // AppStorage automatically triggers UI updates - no need for objectWillChange
     }
 }
 
@@ -413,6 +446,7 @@ struct SettingsSection: View {
 struct UsageMetricsSection: View {
     let totalTranscriptions: Int
     let totalTimeTranscribedSeconds: Double
+    var onReset: () -> Void
     
     private var totalMinutes: Double {
         totalTimeTranscribedSeconds / 60.0
@@ -425,9 +459,20 @@ struct UsageMetricsSection: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Usage Metrics")
+            HStack {
+                Text("Usage Metrics")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
+                Spacer()
+                
+                Button("Reset") {
+                    onReset()
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.small)
                 .font(.caption)
-                .foregroundColor(.secondary)
+            }
             
             HStack(spacing: 20) {
                 metricView(label: "Transcriptions", value: "\(totalTranscriptions)")

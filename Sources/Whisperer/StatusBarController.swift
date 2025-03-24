@@ -1,6 +1,11 @@
 import SwiftUI
 import AVFoundation
 
+// Define a notification name for transcription completion
+extension Notification.Name {
+    static let transcriptionCompleted = Notification.Name("transcriptionCompleted")
+}
+
 @MainActor
 class StatusBarController: ObservableObject {
     @Published var isMenuOpen = false
@@ -31,6 +36,7 @@ class StatusBarController: ObservableObject {
     // Feedback sounds
     private let startSound = NSSound(named: "Pop")
     private let endSound = NSSound(named: "Blow")
+    private let shortRecordingSound = NSSound(named: "Basso") // Sound for too-short recordings
     
     init() {
         // First create the actor
@@ -119,6 +125,9 @@ class StatusBarController: ObservableObject {
                     if self.transcriptionHistory.count > self.maxHistoryItems {
                         self.transcriptionHistory.removeLast()
                     }
+                    
+                    // Post notification for completed transcription with duration
+                    self.notifyTranscriptionCompleted()
                 }
                 
                 // Keep the lastTranscribedText for display until next recording starts
@@ -135,6 +144,19 @@ class StatusBarController: ObservableObject {
         )
     }
     
+    // New method to notify when a transcription is completed
+    private func notifyTranscriptionCompleted() {
+        // Only notify if we have duration data
+        if let duration = lastTranscriptionDuration {
+            // Post notification with user info containing duration
+            NotificationCenter.default.post(
+                name: .transcriptionCompleted,
+                object: self,
+                userInfo: ["duration": duration]
+            )
+        }
+    }
+    
     func startRecording() {
         guard !isRecording else { return }
         
@@ -143,6 +165,7 @@ class StatusBarController: ObservableObject {
         // Reset only the display text for the current session
         currentSessionText = ""
         lastTranscribedText = ""
+        lastTranscriptionDuration = nil
         
         // Record start time for duration tracking
         recordingStartTime = Date()
@@ -167,7 +190,28 @@ class StatusBarController: ObservableObject {
         
         // Calculate recording duration
         if let startTime = recordingStartTime {
-            lastTranscriptionDuration = Date().timeIntervalSince(startTime)
+            let duration = Date().timeIntervalSince(startTime)
+            
+            // For short recordings (< 0.5 seconds), consider it a mistake and don't process
+            if duration < 0.5 {
+                // Need to clean up resources without triggering the onRecordingComplete callback
+                isRecording = false
+                
+                // Reset recording state and UI
+                currentSessionText = ""
+                lastTranscribedText = ""
+                lastTranscriptionDuration = nil
+                
+                // Manually stop the audio engine without triggering the callback
+                audioRecorder.cancelRecording()
+                
+                // Play a different sound to indicate we won't transcribe it
+                shortRecordingSound?.play()
+                return
+            }
+            
+            // Set the duration for valid recordings
+            lastTranscriptionDuration = duration
         }
         
         // Stop audio recording immediately
