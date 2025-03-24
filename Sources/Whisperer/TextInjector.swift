@@ -2,6 +2,7 @@ import Foundation
 import Cocoa
 import Carbon
 
+@MainActor
 class TextInjector {
     // Previous text to avoid reinserting the same content
     private var previousText = ""

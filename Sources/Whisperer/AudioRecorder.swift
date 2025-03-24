@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 
+@MainActor
 class AudioRecorder: NSObject {
     private var audioEngine: AVAudioEngine!
     private var inputNode: AVAudioInputNode!
@@ -17,6 +18,27 @@ class AudioRecorder: NSObject {
     override init() {
         super.init()
         setupAudioEngine()
+    }
+    
+    deinit {
+        // For deinit, we need to handle this in a way that doesn't capture self
+        // Create local snapshot of variables needed
+        let localIsRecording = isRecording
+        let localInputNode = inputNode
+        let localAudioEngine = audioEngine
+        
+        // Schedule cleanup on the main actor without capturing self
+        if localIsRecording {
+            Task.detached { @MainActor in
+                // Stop the engine without using instance methods
+                localAudioEngine?.stop()
+                localInputNode?.removeTap(onBus: 0)
+            }
+        } else {
+            // If not recording, we can do simple cleanup
+            localInputNode?.removeTap(onBus: 0)
+            localAudioEngine?.stop()
+        }
     }
     
     private func setupAudioEngine() {
@@ -94,6 +116,7 @@ class AudioRecorder: NSObject {
         }
     }
     
+    // Regular MainActor method since we want to call it from the main actor context
     func stopRecording() {
         guard isRecording else { return }
         
@@ -101,6 +124,7 @@ class AudioRecorder: NSObject {
         inputNode.removeTap(onBus: 0)
         
         isRecording = false
+        
         log("Audio recording stopped")
         
         // Get the audio data and call the completion handler

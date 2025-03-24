@@ -9,7 +9,8 @@ extension FixedWidthInteger {
     }
 }
 
-class TranscriptionService {
+// Make this an actor to eliminate data races
+actor TranscriptionService {
     // Log levels
     enum LogLevel: Int {
         case none = 0
@@ -32,8 +33,8 @@ class TranscriptionService {
     // State management
     private var connectionState = ConnectionState.idle {
         didSet {
-            DispatchQueue.main.async {
-                self.onConnectionStateChanged?(self.connectionState)
+            Task { @MainActor in
+                await self.onConnectionStateChanged?(self.connectionState)
             }
             
             switch connectionState {
@@ -53,9 +54,9 @@ class TranscriptionService {
     private var transcriptionTask: URLSessionDataTask?
     
     // Callbacks
-    var onTranscriptionReceived: ((String) -> Void)?
-    var onConnectionStateChanged: ((ConnectionState) -> Void)?
-    var onTranscriptionComplete: (() -> Void)?
+    private var onTranscriptionReceived: ((String) -> Void)?
+    private var onConnectionStateChanged: ((ConnectionState) -> Void)?
+    private var onTranscriptionComplete: (() -> Void)?
     
     private var apiKey: String {
         // First check user defaults
@@ -123,45 +124,54 @@ class TranscriptionService {
         
         log(.info, message: "Sending audio for transcription...")
         
+        // Capture weak self before creating URLSession task
+        let weakSelf = self
+        
         // Create a data task for the request with streaming support
         let session = URLSession.shared
-        transcriptionTask = session.dataTask(with: request) { [weak self] data, response, error in
-            guard let self = self else { return }
-            
-            if let error = error {
-                self.log(.error, message: "Transcription request failed: \(error.localizedDescription)")
-                self.connectionState = .error("Request failed: \(error.localizedDescription)")
-                return
+        transcriptionTask = session.dataTask(with: request) { data, response, error in
+            Task {
+                // Re-obtain self inside the task to ensure actor isolation
+                await weakSelf.handleTranscriptionResponse(data: data, response: response, error: error)
             }
-            
-            guard let httpResponse = response as? HTTPURLResponse else {
-                self.connectionState = .error("Invalid response from server")
-                return
-            }
-            
-            if httpResponse.statusCode != 200 {
-                let errorMessage = self.parseErrorMessage(data: data)
-                self.log(.error, message: "Server returned error: \(httpResponse.statusCode), \(errorMessage)")
-                self.connectionState = .error("Server error: \(httpResponse.statusCode)")
-                return
-            }
-            
-            guard let data = data else {
-                self.connectionState = .error("No data received")
-                return
-            }
-            
-            self.log(.info, message: "Transcription data received, processing SSE response")
-            
-            // Process the SSE data
-            self.handleSSEData(data)
-            
-            // Mark as complete
-            self.log(.info, message: "Transcription complete")
-            self.connectionState = .idle
         }
         
         transcriptionTask?.resume()
+    }
+    
+    // Handle the transcription response in actor-isolated context
+    private func handleTranscriptionResponse(data: Data?, response: URLResponse?, error: Error?) {
+        if let error = error {
+            log(.error, message: "Transcription request failed: \(error.localizedDescription)")
+            connectionState = .error("Request failed: \(error.localizedDescription)")
+            return
+        }
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            connectionState = .error("Invalid response from server")
+            return
+        }
+        
+        if httpResponse.statusCode != 200 {
+            let errorMessage = parseErrorMessage(data: data)
+            log(.error, message: "Server returned error: \(httpResponse.statusCode), \(errorMessage)")
+            connectionState = .error("Server error: \(httpResponse.statusCode)")
+            return
+        }
+        
+        guard let data = data else {
+            connectionState = .error("No data received")
+            return
+        }
+        
+        log(.info, message: "Transcription data received, processing SSE response")
+        
+        // Process the SSE data
+        handleSSEData(data)
+        
+        // Mark as complete
+        log(.info, message: "Transcription complete")
+        connectionState = .idle
     }
     
     private func createRequestBody(boundary: String, audioData: Data) -> Data {
@@ -271,8 +281,8 @@ class TranscriptionService {
         }
         
         // After processing all events, signal completion
-        DispatchQueue.main.async {
-            self.onTranscriptionComplete?()
+        Task { @MainActor in
+            await self.onTranscriptionComplete?()
         }
     }
     
@@ -297,8 +307,8 @@ class TranscriptionService {
                 case "transcript.text.delta":
                     if let delta = json["delta"] as? String {
                         log(.debug, message: "Transcription delta: \"\(delta)\"")
-                        DispatchQueue.main.async {
-                            self.onTranscriptionReceived?(delta)
+                        Task { @MainActor in
+                            await self.onTranscriptionReceived?(delta)
                         }
                     }
                     
@@ -356,6 +366,17 @@ class TranscriptionService {
             }
             print("\(prefix)\(message)")
         }
+    }
+    
+    /// Set all callbacks safely within the actor's isolation domain
+    func setCallbacks(
+        onStateChanged: @escaping (ConnectionState) -> Void,
+        onReceived: @escaping (String) -> Void,
+        onComplete: @escaping () -> Void
+    ) {
+        self.onConnectionStateChanged = onStateChanged
+        self.onTranscriptionReceived = onReceived
+        self.onTranscriptionComplete = onComplete
     }
 } 
 

@@ -4,6 +4,8 @@ struct ContentView: View {
     @EnvironmentObject private var statusController: StatusBarController
     @AppStorage("openAIApiKey") private var apiKey: String = ""
     @AppStorage("customPrompt") private var customPrompt: String = ""
+    @AppStorage("totalTranscriptions") private var totalTranscriptions: Int = 0
+    @AppStorage("totalTimeTranscribedSeconds") private var totalTimeTranscribedSeconds: Double = 0
     @State private var apiKeyMessage: String = ""
     @State private var apiKeyMessageColor: Color = .secondary
     @State private var isTesting = false
@@ -37,6 +39,14 @@ struct ContentView: View {
             
             Divider()
             
+            // Usage metrics section
+            UsageMetricsSection(
+                totalTranscriptions: totalTranscriptions,
+                totalTimeTranscribedSeconds: totalTimeTranscribedSeconds
+            )
+            
+            Divider()
+            
             // Settings section (always shown)
             SettingsSection(
                 apiKey: $apiKey,
@@ -60,6 +70,12 @@ struct ContentView: View {
         .onAppear {
             validateApiKey(apiKey)
         }
+        .onChange(of: statusController.transcriptionHistory) { newHistory in
+            // If we have a new transcription, update metrics
+            if let lastTranscriptionDuration = statusController.lastTranscriptionDuration {
+                updateMetrics(duration: lastTranscriptionDuration)
+            }
+        }
     }
     
     private func validateApiKey(_ key: String) {
@@ -76,6 +92,11 @@ struct ContentView: View {
             apiKeyMessage = "API key format looks valid"
             apiKeyMessageColor = .green
         }
+    }
+    
+    private func updateMetrics(duration: Double) {
+        totalTranscriptions += 1
+        totalTimeTranscribedSeconds += duration
     }
 }
 
@@ -389,7 +410,65 @@ struct SettingsSection: View {
     }
 }
 
-#Preview {
-    ContentView()
-        .environmentObject(StatusBarController())
-} 
+struct UsageMetricsSection: View {
+    let totalTranscriptions: Int
+    let totalTimeTranscribedSeconds: Double
+    
+    private var totalMinutes: Double {
+        totalTimeTranscribedSeconds / 60.0
+    }
+    
+    private var totalCost: Double {
+        // $0.006 per minute
+        totalMinutes * 0.006
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Usage Metrics")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            
+            HStack(spacing: 20) {
+                metricView(label: "Transcriptions", value: "\(totalTranscriptions)")
+                metricView(label: "Time", value: timeFormatted)
+                metricView(label: "Cost", value: costFormatted)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 4)
+    }
+    
+    private func metricView(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+            
+            Text(value)
+                .font(.system(.body, design: .monospaced))
+                .fontWeight(.medium)
+        }
+    }
+    
+    private var timeFormatted: String {
+        if totalMinutes < 1 {
+            return String(format: "%.0f sec", totalTimeTranscribedSeconds)
+        } else {
+            return String(format: "%.1f min", totalMinutes)
+        }
+    }
+    
+    private var costFormatted: String {
+        return String(format: "$%.3f", totalCost)
+    }
+}
+
+#if DEBUG
+struct ContentView_Previews: PreviewProvider {
+    static var previews: some View {
+        ContentView()
+            .environmentObject(StatusBarController())
+    }
+}
+#endif 
