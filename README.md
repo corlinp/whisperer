@@ -1,6 +1,6 @@
 # Whisperer
 
-A macOS menu bar app that transcribes speech in real-time and types the transcribed text into the active text field.
+A macOS menu bar app that transcribes speech types the transcribed text into the active text field.
 
 ## Features
 
@@ -10,7 +10,6 @@ A macOS menu bar app that transcribes speech in real-time and types the transcri
 - Injects the transcribed text into your active text field 
 - Works system-wide in any application
 - Configurable prompt for improved transcription context
-- Clean, modern interface with integrated settings
 
 ## Requirements
 
@@ -20,60 +19,24 @@ A macOS menu bar app that transcribes speech in real-time and types the transcri
 
 ## Setup
 
-### Building from Source
-
 1. Clone the repository
-2. Run `swift build` to build the app
-3. Run `swift run` to start the app
-
-### Setting up Your API Key
-
-1. Click on the Whisperer menu bar icon
-2. Click on the gear icon to show settings
-3. Enter your OpenAI API key in the API Key field
-4. Click "Test" to verify your API key works with the OpenAI API
-5. Customize the prompt to improve transcription for your use case
-
-### Granting Permissions
-
-Whisperer requires the following permissions to function:
-
-1. **Microphone access** - For capturing your voice
-2. **Accessibility access** - For monitoring the right Option key and injecting text
-
-To grant Accessibility access:
-1. Click on the "Open Accessibility Settings" button in the app
-2. Add Whisperer to the list of allowed applications
+2. Run `swift run` to start the app
+3. Open the menubar app, input and test your OpenAI API key
+4. Grant accessibility permissions to the program that's running the app; this might be your IDE or terminal.
 
 ## Usage
 
 1. Click the Whisperer icon in your menu bar to open the interface
-2. Position your cursor where you want text to appear
+2. Click where you want text to appear
 3. Hold down the right Option key and speak
 4. Release the Option key when you're done
 5. The transcribed text will be typed into your active application
-
-## Interface
-
-- **Status Indicator**: Shows whether the app is ready or recording
-- **Last Transcription**: Displays your most recently transcribed text
-- **Settings**: Easily accessible through the gear icon
-  - API Key Management: Enter and test your OpenAI API key
-  - Custom Prompt: Add context to improve transcription accuracy
-  - Accessibility Settings: Quick access to system permissions
-
-## How It Works
-
-- The app monitors system-wide key events to detect when you press the right Option key
-- When the key is pressed, it starts recording audio from your microphone
-- The audio is streamed to OpenAI's GPT-4o-transcribe API for real-time transcription
-- As text is transcribed, it's injected into your active text field as if you were typing
 
 ## Privacy
 
 - Audio is only recorded while you hold the right Option key
 - Your API key is stored locally on your device
-- No data is stored on remote servers other than what is processed by OpenAI
+- No data is sent to or stored on remote servers other than what is processed by OpenAI
 
 ## Troubleshooting
 
