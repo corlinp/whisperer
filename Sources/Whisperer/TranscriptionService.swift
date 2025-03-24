@@ -55,6 +55,7 @@ class TranscriptionService {
     // Callbacks
     var onTranscriptionReceived: ((String) -> Void)?
     var onConnectionStateChanged: ((ConnectionState) -> Void)?
+    var onTranscriptionComplete: (() -> Void)?
     
     private var apiKey: String {
         // First check user defaults
@@ -267,6 +268,11 @@ class TranscriptionService {
                     processSSEEvent(jsonText)
                 }
             }
+        }
+        
+        // After processing all events, signal completion
+        DispatchQueue.main.async {
+            self.onTranscriptionComplete?()
         }
     }
     

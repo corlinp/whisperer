@@ -11,6 +11,9 @@ class StatusBarController: ObservableObject {
     // Maximum number of transcriptions to keep in history
     private let maxHistoryItems = 3
     
+    // Current session's accumulating transcription text
+    private var currentSessionText = ""
+    
     private let keyMonitor = KeyMonitor()
     private let audioRecorder = AudioRecorder()
     private let transcriptionService = TranscriptionService()
@@ -72,19 +75,37 @@ class StatusBarController: ObservableObject {
             }
         }
         
-        // Initialize accumulator for transcribed text
-        var currentTranscribedText = ""
-        
         transcriptionService.onTranscriptionReceived = { [weak self] text in
             guard let self = self else { return }
             
             DispatchQueue.main.async {
-                // For the SSE streaming API, we'll receive text deltas to append
-                currentTranscribedText += text
-                self.lastTranscribedText = currentTranscribedText
+                // Append the new text to the current session's text
+                self.currentSessionText += text
+                self.lastTranscribedText = self.currentSessionText
                 
                 // Inject the transcribed text delta to the active application
                 self.textInjector.injectText(text)
+            }
+        }
+        
+        transcriptionService.onTranscriptionComplete = { [weak self] in
+            guard let self = self else { return }
+            
+            DispatchQueue.main.async {
+                // Only add to history if we have some text
+                if !self.currentSessionText.isEmpty {
+                    // Add current transcription to history
+                    self.transcriptionHistory.insert(self.currentSessionText, at: 0)
+                    
+                    // Limit history size
+                    if self.transcriptionHistory.count > self.maxHistoryItems {
+                        self.transcriptionHistory.removeLast()
+                    }
+                }
+                
+                // Keep the lastTranscribedText for display until next recording starts
+                // but reset the session text
+                self.currentSessionText = ""
             }
         }
     }
@@ -94,7 +115,8 @@ class StatusBarController: ObservableObject {
         
         isRecording = true
         
-        // Reset text accumulation
+        // Reset only the display text for the current session
+        currentSessionText = ""
         lastTranscribedText = ""
         
         // Tell the transcription service we're starting to record
@@ -118,15 +140,7 @@ class StatusBarController: ObservableObject {
         audioRecorder.stopRecording()
         isRecording = false
         
-        // Save the last transcription to history when recording stops
-        if !lastTranscribedText.isEmpty {
-            DispatchQueue.main.async {
-                self.transcriptionHistory.insert(self.lastTranscribedText, at: 0)
-                if self.transcriptionHistory.count > self.maxHistoryItems {
-                    self.transcriptionHistory.removeLast()
-                }
-            }
-        }
+        // Note: We don't add to history here anymore - that happens in onTranscriptionComplete
         
         // Play sound to indicate recording stopped
         endSound?.play()
