@@ -84,6 +84,26 @@ actor TranscriptionService {
     // Called when recording is finished
     func finishRecording(withAudioData audioData: Data) {
         log(.info, message: "Recording finished, sending audio for transcription")
+        
+        // Ensure audio data exists and has reasonable size
+        guard !audioData.isEmpty, audioData.count > 100 else {
+            log(.error, message: "Audio data too small or empty")
+            connectionState = .error("Audio data too small or empty")
+            
+            // Ensure we still complete the transcription when we have no data
+            Task { @MainActor in
+                await self.onTranscriptionComplete?()
+            }
+            
+            // Return to idle state after reporting error
+            Task {
+                try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
+                self.connectionState = .idle
+            }
+            
+            return
+        }
+        
         recordedAudioData = audioData
         sendAudioForTranscription()
     }
@@ -262,11 +282,18 @@ actor TranscriptionService {
     private func handleSSEData(_ data: Data) {
         guard let sseText = String(data: data, encoding: .utf8) else {
             log(.error, message: "Failed to decode SSE data")
+            // Ensure we still complete the transcription even on error
+            Task { @MainActor in
+                await self.onTranscriptionComplete?()
+            }
             return
         }
         
         // Split the string by double newlines, which separate SSE messages
         let eventStrings = sseText.components(separatedBy: "\n\n")
+        
+        // Track if we got any valid deltas
+        var receivedAnyDeltas = false
         
         for eventString in eventStrings {
             if eventString.isEmpty { continue }
@@ -275,28 +302,28 @@ actor TranscriptionService {
             for line in eventString.components(separatedBy: "\n") {
                 if line.hasPrefix("data: ") {
                     let jsonText = String(line.dropFirst(6))
-                    processSSEEvent(jsonText)
+                    receivedAnyDeltas = processSSEEvent(jsonText) || receivedAnyDeltas
                 }
             }
         }
         
-        // After processing all events, signal completion
+        // Even if we didn't get valid deltas, we should complete the transcription
         Task { @MainActor in
             await self.onTranscriptionComplete?()
         }
     }
     
-    // Process a single SSE event
-    private func processSSEEvent(_ jsonText: String) {
+    // Process a single SSE event - returns true if a valid delta was processed
+    private func processSSEEvent(_ jsonText: String) -> Bool {
         // Skip empty messages and special non-JSON messages
         if jsonText.isEmpty || jsonText == "[DONE]" {
             log(.debug, message: "Received end-of-stream marker")
-            return
+            return false
         }
         
         guard let jsonData = jsonText.data(using: .utf8) else { 
             log(.debug, message: "Could not convert SSE text to data")
-            return 
+            return false
         }
         
         do {
@@ -310,12 +337,14 @@ actor TranscriptionService {
                         Task { @MainActor in
                             await self.onTranscriptionReceived?(delta)
                         }
+                        return true
                     }
                     
                 case "transcript.text.done":
                     if let fullText = json["text"] as? String {
                         log(.info, message: "Transcription complete: \"\(fullText)\"")
                     }
+                    return true
                     
                 default:
                     log(.debug, message: "Unhandled SSE event type: \(type)")
@@ -325,6 +354,8 @@ actor TranscriptionService {
             // Don't treat as an error - this could be a non-JSON message or stream terminator
             log(.debug, message: "Skipping non-JSON SSE message: \(error.localizedDescription)")
         }
+        
+        return false
     }
     
     // Parse error message from response data
@@ -351,7 +382,11 @@ actor TranscriptionService {
     func cancelTranscription() {
         transcriptionTask?.cancel()
         transcriptionTask = nil
+        // Ensure we switch back to idle state
         connectionState = .idle
+        
+        // Clear any stored audio data
+        recordedAudioData = nil
     }
     
     // Logging utility

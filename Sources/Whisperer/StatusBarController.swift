@@ -24,6 +24,10 @@ class StatusBarController: ObservableObject {
     // For tracking recording duration
     private var recordingStartTime: Date? = nil
     
+    // For tracking transcription timeouts
+    private var transcriptionTimeoutTask: Task<Void, Never>? = nil
+    private let transcriptionTimeout: TimeInterval = 30 // seconds
+    
     private let keyMonitor = KeyMonitor()
     private let audioRecorder = AudioRecorder()
     private var transcriptionService: TranscriptionService! = nil
@@ -32,6 +36,7 @@ class StatusBarController: ObservableObject {
     // Status icons
     private let idleIcon = "waveform"
     private let recordingIcon = "waveform.circle.fill"
+    private let transcribingIcon = "waveform.circle"
     
     // Feedback sounds
     private let startSound = NSSound(named: "Pop")
@@ -89,12 +94,19 @@ class StatusBarController: ObservableObject {
                 switch state {
                 case .idle:
                     self.connectionState = "Idle"
+                    // Cancel any timeout tasks when we reach idle state
+                    self.transcriptionTimeoutTask?.cancel()
+                    self.transcriptionTimeoutTask = nil
                 case .recording:
                     self.connectionState = "Recording"
                 case .transcribing:
                     self.connectionState = "Transcribing"
+                    // Start timeout task when transcription begins
+                    self.startTranscriptionTimeout()
                 case .error:
                     self.connectionState = "Error"
+                    // Reset to idle after a brief delay if there's an error
+                    self.scheduleResetToIdle()
                 }
             }
         }
@@ -157,6 +169,45 @@ class StatusBarController: ObservableObject {
         }
     }
     
+    private func startTranscriptionTimeout() {
+        // Cancel any existing timeout task
+        transcriptionTimeoutTask?.cancel()
+        
+        // Create a new timeout task
+        transcriptionTimeoutTask = Task { @MainActor in
+            do {
+                // Wait for the timeout duration
+                try await Task.sleep(nanoseconds: UInt64(transcriptionTimeout * 1_000_000_000))
+                
+                // If we reach here without cancellation, the transcription has timed out
+                // Check if we're still in transcribing state
+                if self.connectionState == "Transcribing" {
+                    print("Transcription timed out after \(transcriptionTimeout) seconds")
+                    
+                    // Cancel the transcription
+                    await self.transcriptionService.cancelTranscription()
+                    
+                    // Reset state
+                    self.connectionState = "Idle"
+                    
+                    // Clear the timeout task
+                    self.transcriptionTimeoutTask = nil
+                }
+            } catch {
+                // Task was canceled, which is expected behavior
+            }
+        }
+    }
+    
+    private func scheduleResetToIdle() {
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 3_000_000_000) // 3 seconds
+            if self.connectionState == "Error" {
+                self.connectionState = "Idle"
+            }
+        }
+    }
+    
     func startRecording() {
         guard !isRecording else { return }
         
@@ -205,6 +256,11 @@ class StatusBarController: ObservableObject {
                 // Manually stop the audio engine without triggering the callback
                 audioRecorder.cancelRecording()
                 
+                // Ensure the connection state is reset
+                Task {
+                    await transcriptionService.cancelTranscription()
+                }
+                
                 // Play a different sound to indicate we won't transcribe it
                 shortRecordingSound?.play()
                 return
@@ -226,7 +282,18 @@ class StatusBarController: ObservableObject {
     }
     
     func getStatusIcon() -> String {
-        return isRecording ? recordingIcon : idleIcon
+        if isRecording {
+            return recordingIcon
+        } else if connectionState == "Transcribing" {
+            return transcribingIcon
+        } else {
+            return idleIcon
+        }
+    }
+    
+    // Returns true if the app is in an active state (recording or transcribing)
+    func isActiveState() -> Bool {
+        return isRecording || connectionState == "Transcribing"
     }
     
     deinit {
@@ -234,6 +301,9 @@ class StatusBarController: ObservableObject {
         let ts = transcriptionService
         let ar = audioRecorder
         let km = keyMonitor
+        
+        // Cancel any timeout tasks
+        transcriptionTimeoutTask?.cancel()
         
         // Create a fully detached task without any reference to self
         Task.detached {
