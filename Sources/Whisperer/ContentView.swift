@@ -1,4 +1,5 @@
 import SwiftUI
+import Foundation
 
 struct ContentView: View {
     @EnvironmentObject private var statusController: StatusBarController
@@ -20,6 +21,9 @@ struct ContentView: View {
                 
                 Spacer()
                 
+                // Microphone picker button
+                MicrophonePickerButton()
+                
                 // Quit button moved to top right
                 Button("Quit") {
                     NSApplication.shared.terminate(nil)
@@ -36,6 +40,14 @@ struct ContentView: View {
                 connectionState: statusController.connectionState,
                 isToggleMode: statusController.isToggleMode
             )
+            
+            // Error message display
+            if let errorMessage = statusController.errorMessage {
+                Text(errorMessage)
+                    .foregroundColor(.red)
+                    .font(.subheadline)
+                    .padding(.horizontal)
+            }
             
             Divider()
             
@@ -69,7 +81,7 @@ struct ContentView: View {
             
             // Footer with attribution and links
             HStack(spacing: 8) {
-                Text("Created by Corlin Palmer, 2025")
+                Text("Corlin Palmer  2025")
                     .font(.caption2)
                     .foregroundColor(.secondary)
                 
@@ -147,6 +159,60 @@ struct ContentView: View {
         totalTranscriptions = 0
         totalTimeTranscribedSeconds = 0
         // AppStorage automatically triggers UI updates - no need for objectWillChange
+    }
+    
+    private func copyToClipboard(text: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+    }
+    
+    private func openSettingsWindow() {
+        // Implementation for settings window
+    }
+}
+
+struct MicrophonePickerButton: View {
+    @EnvironmentObject private var statusController: StatusBarController
+    
+    var body: some View {
+        Menu {
+            // List of available microphones
+            ForEach(statusController.availableMicrophones, id: \.id) { mic in
+                Button(action: {
+                    statusController.selectMicrophone(deviceID: mic.id)
+                }) {
+                    HStack {
+                        Text(mic.name)
+                        
+                        if statusController.selectedMicrophoneID == mic.id {
+                            Spacer()
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+            
+            // Show message if no microphones found
+            if statusController.availableMicrophones.isEmpty {
+                Text("No microphones found")
+                    .foregroundColor(.secondary)
+            }
+        } label: {
+            Text("Input Devices")
+                .font(.system(.body, design: .default))
+        }
+        .menuIndicator(.hidden)
+        .onAppear {
+            statusController.refreshMicrophoneList()
+        }
+        .onHover { isHovering in
+            // Refresh device list when hovering over the menu button
+            if isHovering {
+                statusController.refreshMicrophoneList()
+            }
+        }
+        .fixedSize()
     }
 }
 

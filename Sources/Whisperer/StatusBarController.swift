@@ -15,6 +15,9 @@ class StatusBarController: ObservableObject {
     @Published var connectionState = "Idle"
     @Published var lastTranscriptionDuration: Double? = nil
     @Published var isToggleMode = false
+    @Published var errorMessage: String? = nil
+    @Published var availableMicrophones: [(id: String, name: String)] = []
+    @Published var selectedMicrophoneID: String? = nil
     
     // Maximum number of transcriptions to keep in history
     private let maxHistoryItems = 3
@@ -43,11 +46,13 @@ class StatusBarController: ObservableObject {
     private let idleIcon = "waveform"
     private let recordingIcon = "waveform.circle.fill"
     private let transcribingIcon = "waveform.circle"
+    private let errorIcon = "waveform.badge.exclamationmark"
     
     // Feedback sounds
     private let startSound = NSSound(named: "Pop")
     private let endSound = NSSound(named: "Blow")
     private let shortRecordingSound = NSSound(named: "Basso") // Sound for too-short recordings
+    private let errorSound = NSSound(named: "Sosumi") // Sound for errors
     
     init() {
         // First create the actor
@@ -57,6 +62,9 @@ class StatusBarController: ObservableObject {
         setupKeyMonitor()
         setupAudioRecorder()
         setupTranscriptionService()
+        
+        // Get available microphones
+        refreshMicrophoneList()
     }
     
     private func setupKeyMonitor() {
@@ -108,6 +116,38 @@ class StatusBarController: ObservableObject {
     }
     
     private func setupAudioRecorder() {
+        // Set up error callback
+        audioRecorder.onRecordingError = { [weak self] errorMessage in
+            guard let self = self else { return }
+            
+            Task { @MainActor in
+                // Stop recording if we're still recording
+                if self.isRecording {
+                    self.isRecording = false
+                    self.isToggleMode = false
+                }
+                
+                // Set error message
+                self.errorMessage = errorMessage
+                self.connectionState = "Error"
+                
+                // Play error sound
+                self.errorSound?.play()
+                
+                // Clear error after a delay
+                Task {
+                    try? await Task.sleep(nanoseconds: 5_000_000_000) // 5 seconds
+                    if self.errorMessage == errorMessage {
+                        self.errorMessage = nil
+                        if self.connectionState == "Error" {
+                            self.connectionState = "Idle"
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Keep existing completion callback
         audioRecorder.onRecordingComplete = { [weak self] audioData in
             guard let self = self else { return }
             // Send the complete audio data for transcription
@@ -115,6 +155,39 @@ class StatusBarController: ObservableObject {
                 await self.transcriptionService.finishRecording(withAudioData: audioData)
             }
         }
+    }
+    
+    func refreshMicrophoneList() {
+        // Get list of available microphones
+        availableMicrophones = audioRecorder.getAvailableInputDevices()
+        
+        // Get currently selected microphone
+        selectedMicrophoneID = audioRecorder.getCurrentInputDeviceID()
+        
+        // If no microphones are available, show an error
+        if availableMicrophones.isEmpty {
+            errorMessage = "No microphones found. Check your audio devices."
+            connectionState = "Error"
+            
+            // Clear error after a delay
+            Task {
+                try? await Task.sleep(nanoseconds: 5_000_000_000) // 5 seconds
+                if self.errorMessage == "No microphones found. Check your audio devices." {
+                    self.errorMessage = nil
+                    if self.connectionState == "Error" {
+                        self.connectionState = "Idle"
+                    }
+                }
+            }
+        }
+    }
+    
+    func selectMicrophone(deviceID: String) {
+        // Set selected microphone
+        audioRecorder.setInputDevice(deviceID: deviceID)
+        
+        // Update the UI
+        selectedMicrophoneID = deviceID
     }
     
     private func setupTranscriptionService() {
@@ -250,6 +323,9 @@ class StatusBarController: ObservableObject {
     func startRecording() {
         guard !isRecording else { return }
         
+        // Clear any previous error message
+        errorMessage = nil
+        
         isRecording = true
         
         // Reset only the display text for the current session
@@ -366,6 +442,8 @@ class StatusBarController: ObservableObject {
             return recordingIcon
         } else if connectionState == "Transcribing" {
             return transcribingIcon
+        } else if connectionState == "Error" {
+            return errorIcon
         } else {
             return idleIcon
         }
