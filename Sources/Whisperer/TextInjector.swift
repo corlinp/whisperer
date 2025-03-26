@@ -48,7 +48,7 @@ class TextInjector {
         }
         
         // For longer texts, split and inject in chunks to avoid overwhelming the system
-        let maxChunkSize = 20 // Maximum characters per event
+        let maxChunkSize = 5 // Maximum characters per event
         var remainingText = text
         
         while !remainingText.isEmpty {
@@ -77,7 +77,7 @@ class TextInjector {
             
             // Add a small delay between chunks
             if !remainingText.isEmpty {
-                usleep(5000) // 5ms delay between chunks
+                usleep(8333) // 8.333ms delay between chunks (120 chunks per second)
             }
         }
     }

@@ -23,6 +23,8 @@ struct ContentView: View {
                 
                 // Microphone picker button
                 MicrophonePickerButton()
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                 
                 // Quit button moved to top right
                 Button("Quit") {

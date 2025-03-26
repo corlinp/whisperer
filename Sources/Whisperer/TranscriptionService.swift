@@ -58,6 +58,10 @@ actor TranscriptionService {
     private var onConnectionStateChanged: ((ConnectionState) -> Void)?
     private var onTranscriptionComplete: (() -> Void)?
     
+    // Retry configuration
+    private let maxRetries = 5
+    private var currentRetryCount = 0
+    
     private var apiKey: String {
         // First check user defaults
         if let key = UserDefaults.standard.string(forKey: "openAIApiKey"), !key.isEmpty {
@@ -163,7 +167,15 @@ actor TranscriptionService {
     private func handleTranscriptionResponse(data: Data?, response: URLResponse?, error: Error?) {
         if let error = error {
             log(.error, message: "Transcription request failed: \(error.localizedDescription)")
-            connectionState = .error("Request failed: \(error.localizedDescription)")
+            
+            // Check if this is a cancellation - don't retry in that case
+            if (error as NSError).domain == NSURLErrorDomain && 
+               (error as NSError).code == NSURLErrorCancelled {
+                connectionState = .error("Request cancelled")
+                return
+            }
+            
+            retryTranscriptionIfPossible(with: "Request failed: \(error.localizedDescription)")
             return
         }
         
@@ -175,9 +187,20 @@ actor TranscriptionService {
         if httpResponse.statusCode != 200 {
             let errorMessage = parseErrorMessage(data: data)
             log(.error, message: "Server returned error: \(httpResponse.statusCode), \(errorMessage)")
+            
+            // Check if this is a server error (5xx) that should be retried
+            if httpResponse.statusCode >= 500 && httpResponse.statusCode < 600 {
+                retryTranscriptionIfPossible(with: "Server error: \(httpResponse.statusCode)")
+                return
+            }
+            
+            // For other errors, don't retry
             connectionState = .error("Server error: \(httpResponse.statusCode)")
             return
         }
+        
+        // Reset retry count on success
+        currentRetryCount = 0
         
         guard let data = data else {
             connectionState = .error("No data received")
@@ -192,6 +215,44 @@ actor TranscriptionService {
         // Mark as complete
         log(.info, message: "Transcription complete")
         connectionState = .idle
+    }
+    
+    // New function to handle retries with exponential backoff
+    private func retryTranscriptionIfPossible(with errorMessage: String) {
+        if currentRetryCount < maxRetries {
+            currentRetryCount += 1
+            
+            // Calculate exponential backoff delay: 2^retry * 250ms 
+            // This gives: 250ms, 500ms, 1s, 2s, 4s for retries 1-5
+            let delayInSeconds = pow(2.0, Double(currentRetryCount)) * 0.25
+            
+            log(.info, message: "Retry \(currentRetryCount)/\(maxRetries) for transcription after \(delayInSeconds)s")
+            
+            // Update connection state to show retry information
+            connectionState = .error("\(errorMessage). Retrying (\(currentRetryCount)/\(maxRetries))...")
+            
+            // Schedule retry after the calculated delay
+            Task {
+                try? await Task.sleep(nanoseconds: UInt64(delayInSeconds * 1_000_000_000))
+                sendAudioForTranscription()
+            }
+        } else {
+            // Max retries reached, give up
+            log(.error, message: "Maximum retries (\(maxRetries)) reached for transcription")
+            connectionState = .error("\(errorMessage). Max retries reached.")
+            
+            // Ensure we complete the transcription process even on error
+            Task { @MainActor in
+                await self.onTranscriptionComplete?()
+            }
+            
+            // Reset retry count and return to idle
+            currentRetryCount = 0
+            Task {
+                try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
+                self.connectionState = .idle
+            }
+        }
     }
     
     private func createRequestBody(boundary: String, audioData: Data) -> Data {
@@ -387,6 +448,9 @@ actor TranscriptionService {
         
         // Clear any stored audio data
         recordedAudioData = nil
+        
+        // Reset retry count
+        currentRetryCount = 0
     }
     
     // Logging utility
