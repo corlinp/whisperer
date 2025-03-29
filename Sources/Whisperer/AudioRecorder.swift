@@ -137,29 +137,69 @@ class AudioRecorder: NSObject {
     }
     
     private func setupAudioEngine() {
+        log("Setting up new audio engine instance...")
         audioEngine = AVAudioEngine()
-        
-        // Apply selected input device if one is set
+
+        // Correctly apply the selected input device directly to the engine instance
         if let deviceID = selectedInputDeviceID {
-            // Convert AudioDeviceID to String when calling setInputDevice
-            setInputDevice(deviceID: String(deviceID))
+            log("Applying selected device ID \(deviceID) to the new engine instance.")
+            guard let inputUnit = audioEngine.inputNode.audioUnit else {
+                log("Error: Failed to get input audio unit for engine configuration.")
+                // Signal error - maybe the engine is in a bad state?
+                onRecordingError?("Internal audio setup error (failed to get unit).")
+                return
+            }
+
+            // Set the kAudioOutputUnitProperty_CurrentDevice property
+            var deviceIDProperty = deviceID // Needs to be var for pointer
+            let status = AudioUnitSetProperty(
+                inputUnit,
+                kAudioOutputUnitProperty_CurrentDevice,
+                kAudioUnitScope_Global,
+                0, // input bus
+                &deviceIDProperty,
+                UInt32(MemoryLayout<AudioDeviceID>.size)
+            )
+
+            if status != noErr {
+                log("Error: Failed to set input device on audio unit. OSStatus: \(status)")
+                // Signal error
+                onRecordingError?("Internal audio setup error (failed to set device property).")
+                return
+            }
+            log("Successfully applied device ID \(deviceID) to the engine's input node.")
+        } else {
+            log("No specific input device selected, using system default for the new engine instance.")
         }
-        
+
+        // Get the input node AFTER setting the device
         inputNode = audioEngine.inputNode
-        
-        // Use the input node's native format instead of forcing a specific format
-        // This avoids format mismatch errors
-        let inputFormat = inputNode.inputFormat(forBus: 0)
-        
-        // Install tap on input node with the native format
+
+        // Use the input node's OUTPUT format for the tap, as this reflects the format after device selection
+        let inputFormat = inputNode.outputFormat(forBus: 0)
+        log("Input node format after device setup: \(inputFormat)")
+
+        // Check if the format is valid before installing the tap
+        guard inputFormat.channelCount > 0, inputFormat.sampleRate > 0 else {
+            log("Error: Invalid input format obtained after setting device: \(inputFormat). Cannot install tap.")
+            onRecordingError?("Internal audio setup error (invalid format).")
+            return
+        }
+
+        // Install tap on input node with the potentially updated format
+        log("Installing tap on input node (bus 0, buffer size \(bufferSize))")
         inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: inputFormat) { [weak self] (buffer, time) in
             guard let self = self, self.isRecording else { return }
+            
+            // Log when a buffer is received
+            // self.log("Received audio buffer at time: \(time)") // Keep this commented unless debugging buffer flow
             
             // Convert to the format we need (16kHz, 16-bit, mono) for the transcription service
             if let convertedBuffer = self.convertBufferToFormat(buffer) {
                 self.audioBuffers.append(convertedBuffer)
             }
         }
+        log("Tap installed successfully on input node.")
     }
     
     // Restart the audio engine to adapt to device changes
@@ -169,20 +209,26 @@ class AudioRecorder: NSObject {
         // Remember we were recording
         let wasRecording = isRecording
         
+        log("Restarting audio engine due to device change...")
         // Stop existing setup
         audioEngine.stop()
         inputNode.removeTap(onBus: 0)
         
-        // Set up again
+        // Set up again with the new device configuration applied correctly
         setupAudioEngine()
         
         // Start again if we were recording
-        if wasRecording {
+        // Note: setupAudioEngine might have returned early if there was an error
+        // We might need a state check here, but let's first see if correct setup fixes it.
+        if wasRecording { // Always true due to guard, but semantically correct
             do {
+                log("Attempting to start restarted audio engine...")
                 try audioEngine.start()
+                log("Restarted audio engine started successfully.")
             } catch {
-                log("Failed to restart audio engine: \(error.localizedDescription)")
-                isRecording = false
+                log("Failed to restart audio engine: \(error.localizedDescription). Error details: \(error)")
+                isRecording = false // Update state
+                // Ensure this error propagates
                 onRecordingError?("Audio device changed and couldn't reconnect: \(error.localizedDescription)")
             }
         }
@@ -397,6 +443,9 @@ class AudioRecorder: NSObject {
             return
         }
         
+        // Store the current recording state BEFORE changing the device
+        let wasRecording = isRecording
+        
         // Set as selected device
         selectedInputDeviceID = audioDeviceID
         
@@ -404,14 +453,58 @@ class AudioRecorder: NSObject {
         if !setDefaultInputDevice(deviceID: audioDeviceID) {
             log("Failed to set default input device")
             onRecordingError?("Failed to change microphone")
+            // Revert selected device ID on failure? Maybe not, user might retry.
             return
         }
         
-        log("Changed audio input to device: \(audioDeviceID)")
+        log("Changed audio input to device: \(audioDeviceID). Reconfiguring engine...")
+
+        // --- Teardown existing engine state --- 
+        if audioEngine != nil && audioEngine.isRunning {
+             log("Stopping existing audio engine before device change.")
+             audioEngine.stop()
+        }
+        // Always remove the tap if inputNode exists
+        if inputNode != nil {
+             log("Removing tap from input node.")
+             inputNode.removeTap(onBus: 0)
+        } else {
+             log("Input node was nil, skipping tap removal.")
+        }
+        // Nil out engine and node to ensure clean setup
+        audioEngine = nil
+        inputNode = nil
+        // We are no longer recording after teardown
+        isRecording = false 
         
-        // If the engine is running, restart it to apply the change
-        if isRecording {
-            restartAudioEngine()
+        // --- Setup new engine with the new device --- 
+        log("Calling setupAudioEngine to apply new device setting.")
+        setupAudioEngine() // This uses the new selectedInputDeviceID
+        
+        // If setup failed, audioEngine might be nil or setupAudioEngine might have signalled an error.
+        guard audioEngine != nil, inputNode != nil else {
+             log("Engine or inputNode is nil after setup attempt following device change.")
+             // isRecording is already false
+             // Error message should have been set by setupAudioEngine
+             return
+        }
+        
+        // --- Restart recording if it was active before --- 
+        if wasRecording {
+             log("Attempting to restart recording after device change...")
+             do {
+                 try audioEngine.start()
+                 isRecording = true // Mark as recording again *only on success*
+                 log("Successfully restarted recording after device change.")
+                 startSilenceWatchdog() // Restart watchdog for the new recording session
+             } catch {
+                 log("Failed to start audio engine after device change: \(error.localizedDescription)")
+                 isRecording = false // Ensure state is correct
+                 onRecordingError?("Failed to restart recording after device change: \(error.localizedDescription)")
+             }
+        } else {
+             // If we weren't recording, the engine is now set up and ready for the *next* recording.
+             log("Audio engine reconfigured for new device. Ready for next recording.")
         }
     }
     
@@ -510,6 +603,9 @@ class AudioRecorder: NSObject {
     
     // Regular MainActor method since we want to call it from the main actor context
     func stopRecording() {
+        // Log the state when stopRecording is called
+        log("stopRecording called. isRecording: \(isRecording), buffer count: \(audioBuffers.count)")
+        
         guard isRecording else { return }
         
         audioEngine.stop()

@@ -455,6 +455,11 @@ actor TranscriptionService {
     
     // Logging utility
     func log(_ level: LogLevel, message: String) {
+        let now = Date()
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
+        let timestamp = formatter.string(from: now)
+        
         if level.rawValue <= logLevel.rawValue {
             let prefix: String
             switch level {
@@ -463,7 +468,9 @@ actor TranscriptionService {
             case .info: prefix = "ℹ️ INFO: "
             case .debug: prefix = "🔍 DEBUG: "
             }
-            print("\(prefix)\(message)")
+            print("\(timestamp) \(prefix)\(message)")
+        } else {
+            print("\(timestamp) \(message)")
         }
     }
     
