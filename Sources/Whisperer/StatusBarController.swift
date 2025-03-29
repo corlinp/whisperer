@@ -54,6 +54,19 @@ class StatusBarController: ObservableObject {
     private let shortRecordingSound = NSSound(named: "Basso") // Sound for too-short recordings
     private let errorSound = NSSound(named: "Sosumi") // Sound for errors
     
+    // Custom sounds
+    private var customStartSound: NSSound? = nil
+    private var customEndSound: NSSound? = nil
+    private var customShortRecordingSound: NSSound? = nil
+    private var customErrorSound: NSSound? = nil
+    
+    // Sound file paths
+    private let customSoundsDirectory = "Resources/Sounds"
+    private let customStartSoundPath = "Resources/Sounds/tick.wav"
+    private let customEndSoundPath = "Resources/Sounds/tock.wav"
+    private let customShortRecordingSoundPath = "Resources/Sounds/short.wav"
+    private let customErrorSoundPath = "Resources/Sounds/error.wav"
+    
     init() {
         // First create the actor
         transcriptionService = TranscriptionService()
@@ -65,6 +78,9 @@ class StatusBarController: ObservableObject {
         
         // Get available microphones
         refreshMicrophoneList()
+        
+        // Load custom sounds if available
+        loadCustomSounds()
     }
     
     private func setupKeyMonitor() {
@@ -132,7 +148,7 @@ class StatusBarController: ObservableObject {
                 self.connectionState = "Error"
                 
                 // Play error sound
-                self.errorSound?.play()
+                self.playSound(self.errorSound, customSound: self.customErrorSound)
                 
                 // Clear error after a delay
                 Task {
@@ -348,7 +364,7 @@ class StatusBarController: ObservableObject {
         textInjector.reset()
         
         // Play sound to indicate recording started
-        startSound?.play()
+        playSound(startSound, customSound: customStartSound)
         
         // Set up auto-stop for long recordings
         startRecordingAutoStop()
@@ -418,7 +434,7 @@ class StatusBarController: ObservableObject {
                 }
                 
                 // Play a different sound to indicate we won't transcribe it
-                shortRecordingSound?.play()
+                playSound(shortRecordingSound, customSound: customShortRecordingSound)
                 return
             }
             
@@ -434,7 +450,7 @@ class StatusBarController: ObservableObject {
         // Note: We don't add to history here anymore - that happens in onTranscriptionComplete
         
         // Play sound to indicate recording stopped
-        endSound?.play()
+        playSound(endSound, customSound: customEndSound)
     }
     
     func getStatusIcon() -> String {
@@ -452,6 +468,27 @@ class StatusBarController: ObservableObject {
     // Returns true if the app is in an active state (recording or transcribing)
     func isActiveState() -> Bool {
         return isRecording || connectionState == "Transcribing"
+    }
+    
+    private func loadCustomSounds() {
+        // Load custom sounds if they exist
+        if let startSound = NSSound(contentsOfFile: customStartSoundPath, byReference: true) {
+            customStartSound = startSound
+        }
+        if let endSound = NSSound(contentsOfFile: customEndSoundPath, byReference: true) {
+            customEndSound = endSound
+        }
+        if let shortSound = NSSound(contentsOfFile: customShortRecordingSoundPath, byReference: true) {
+            customShortRecordingSound = shortSound
+        }
+        if let errorSound = NSSound(contentsOfFile: customErrorSoundPath, byReference: true) {
+            customErrorSound = errorSound
+        }
+    }
+    
+    private func playSound(_ sound: NSSound?, customSound: NSSound?) {
+        // Try to play custom sound first, fall back to system sound
+        customSound?.play() ?? sound?.play()
     }
     
     deinit {
