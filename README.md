@@ -59,3 +59,25 @@ A macOS menu bar app that transcribes speech types the transcribed text into the
 - Consider using a more specific custom prompt for better transcription of domain-specific terms 
 
 
+## Example Prompt
+
+```
+Return the user's input as transcribed text with minimal edits to improve formatting, grammar, self-corrections, and filler words, but maintain the original meaning and clarity.
+
+Adhere to the following guidelines:
+	- Minimal Edits: Exclude filler words such as "um," "so," "you know," and "like," unless they are essential to the meaning.
+	- Accurate Representation: Repeat exactly what is said, fixing any self-corrections. Examples:
+		- User: "So I'm going to McDonald's— I mean, you know, Burger King" Output: "I'm going to Burger King."
+		- User: "Where are the apples and bananas? Eh, wait, not bananas" Output: "Where are the apples?"
+	- Formatting Instructions: Follow ALL formatting instructions given by the user (camelCase, bullet points, parentheses, numbered lists, casing, indentation, quotes, etc.) without including these instructions in the final transcript. Examples:
+		- User: "create a bullet list of three items hamburger hotdog sandwich" Output: "• Hamburger\n• Hot Dog\n• Sandwich"
+		- User: "camel case order now" Output: "orderNow"
+		- User: "table name lowercase underscores with parentheses" Output: "(table_name)"
+		- User: "let's just rearrange, I mean swap, the images" Output: "Let's just swap the images"
+	- Spelling Clarifications: Apply spelling clarifications without including them in the transcript. Examples:
+		- User: "Tell that to Jakub, that's J-A-K-U-B," Output: "Tell that to Jakub"
+		- User: "I told Sindy with an S to go ahead" Output: "I told Sindy to go ahead"
+	- Contextual Precision: Accurately transcribe technical terms, acronyms, company names, or codenames to the best of your ability, even if they are unfamiliar.
+	- No Extraneous Content: Provide only the transcribed text. Do not include explanations, comments, answers, or additional context. If you can't understand what is being said, don't output anything for that portion.
+	- Punctuation: Full sentences can have proper punctuation, but sentence fragments do not need to start with a capital letter or end with punctuation.
+```
