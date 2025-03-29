@@ -1,5 +1,6 @@
 import SwiftUI
 import Foundation
+import ApplicationServices
 
 struct ContentView: View {
     @EnvironmentObject private var statusController: StatusBarController
@@ -247,11 +248,6 @@ struct StatusSection: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
-            
-            Text("Recording stops automatically after 5 minutes")
-                .font(.caption2)
-                .foregroundColor(.secondary)
-                .padding(.top, 2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 4)
@@ -365,12 +361,33 @@ struct SettingsSection: View {
     @Binding var isTesting: Bool
     
     @State private var isEditing = false
+    @State private var accessibilityGranted = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Settings")
                 .font(.headline)
                 .foregroundColor(.primary)
+            
+            // Conditionally show Accessibility settings section at the top
+            if !accessibilityGranted {
+                VStack(spacing: 6) {
+                    Text("Accessibility permission is required for key monitoring")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        // Add hover explanation
+                        .help("Whisperer needs Accessibility access to monitor the Right Option key globally and to type transcribed text into other applications.")
+
+                    Button("Open Accessibility Settings") {
+                        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+                .padding(.vertical, 4) // Add some vertical padding
+                .frame(maxWidth: .infinity) // Ensure it spans width for centering
+            }
             
             // API Key
             VStack(alignment: .leading, spacing: 4) {
@@ -451,22 +468,8 @@ struct SettingsSection: View {
                     .font(.caption2)
                     .foregroundColor(.secondary)
             }
-            
-            // Accessibility settings
-            VStack(spacing: 6) {
-                Text("Accessibility permission is required for key monitoring")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                
-                Button("Open Accessibility Settings") {
-                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-            }
-            .padding(.top, 4)
         }
+        .onAppear(perform: checkAccessibilityPermissions)
     }
     
     private var maskedApiKey: String {
@@ -540,6 +543,13 @@ struct SettingsSection: View {
         }
         
         task.resume()
+    }
+    
+    private func checkAccessibilityPermissions() {
+        DispatchQueue.main.async {
+            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): false] as CFDictionary
+            accessibilityGranted = AXIsProcessTrustedWithOptions(options)
+        }
     }
 }
 
