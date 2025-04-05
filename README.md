@@ -2,7 +2,9 @@
 
 A Mac-native productivity app that types what you say into into the active text field. Hold the right option key and talk, release to transcribe. Uses gpt-4o and your OpenAI API Key.
 
-![image](https://github.com/user-attachments/assets/b1970917-2026-4434-b881-6cd11a8102c1)
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/b1970917-2026-4434-b881-6cd11a8102c1" width="400">
+</p>
 
 ## Features
 
