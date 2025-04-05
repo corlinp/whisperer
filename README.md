@@ -1,4 +1,4 @@
-# Whisperer
+# Voibe
 
 A macOS menu bar app that transcribes speech types the transcribed text into the active text field.
 
@@ -33,7 +33,7 @@ A macOS menu bar app that transcribes speech types the transcribed text into the
 
 ## Usage
 
-1. Click the Whisperer icon in your menu bar to open the interface
+1. Click the Voibe icon in your menu bar to open the interface
 2. Click "Input Devices" to select your preferred audio input source
 3. Click where you want text to appear
 4. Use either recording mode:

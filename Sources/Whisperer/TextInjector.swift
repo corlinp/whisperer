@@ -7,7 +7,7 @@ class TextInjector {
     // Previous text to avoid reinserting the same content
     private var previousText = ""
     // For logging
-    private let logEnabled = false
+    private let logEnabled = true
     
     func injectText(_ text: String) {
         // Handle delta updates vs. full text
@@ -88,7 +88,10 @@ class TextInjector {
     
     private func log(_ message: String) {
         if logEnabled {
-            print("[TextInjector] \(message)")
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
+            let time = formatter.string(from: Date())
+            print("[TextInjector] [\(time)] \(message)")
         }
     }
 } 

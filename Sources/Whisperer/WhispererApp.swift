@@ -3,7 +3,7 @@ import AVFoundation
 import AVKit
 
 @main
-struct WhispererApp: App {
+struct VoibeApp: App {
     @StateObject private var statusBarController = StatusBarController()
     @State private var showingSettings = false
     

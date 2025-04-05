@@ -16,7 +16,7 @@ struct ContentView: View {
         VStack(spacing: 12) {
             // Header
             HStack {
-                Text("Whisperer")
+                Text("Voibe")
                     .font(.headline)
                     .foregroundColor(.primary)
                 
@@ -90,10 +90,10 @@ struct ContentView: View {
                 
                 Spacer()
                 
-                Link("GitHub", destination: URL(string: "https://github.com/corlinp/whisperer")!)
+                Link("GitHub", destination: URL(string: "https://github.com/corlinp/voibe")!)
                     .font(.caption2)
                 
-                Link("Website", destination: URL(string: "https://corlin.io/whisperer")!)
+                Link("Website", destination: URL(string: "https://voibe.app")!)
                     .font(.caption2)
             }
             .padding(.top, 8)
@@ -377,7 +377,7 @@ struct SettingsSection: View {
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
                         // Add hover explanation
-                        .help("Whisperer needs Accessibility access to monitor the Right Option key globally and to type transcribed text into other applications.")
+                        .help("Voibe needs Accessibility access to monitor the Right Option key globally and to type transcribed text into other applications.")
 
                     Button("Open Accessibility Settings") {
                         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)

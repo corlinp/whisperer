@@ -2,19 +2,19 @@
 import PackageDescription
 
 let package = Package(
-    name: "Whisperer",
+    name: "Voibe",
     platforms: [
         .macOS(.v13)
     ],
     products: [
         .executable(
-            name: "Whisperer",
-            targets: ["Whisperer"]
+            name: "Voibe",
+            targets: ["Voibe"]
         )
     ],
     targets: [
         .executableTarget(
-            name: "Whisperer",
+            name: "Voibe",
             dependencies: [],
             swiftSettings: [
                 .define("DEBUG", .when(configuration: .debug))

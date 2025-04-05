@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct WhispererApp: App {
+struct VoibeApp: App {
     @StateObject private var statusBarController = StatusBarController()
     
     var body: some Scene {
